@@ -32,6 +32,20 @@
             <artifactId>commons-csv</artifactId>
             <version>1.10.0</version>
         </dependency>
+
+        <!-- Aggiunta di Weka per il Milestone 2 (Machine Learning) -->
+        <dependency>
+            <groupId>nz.ac.waikato.cms.weka</groupId>
+            <artifactId>weka-stable</artifactId>
+            <version>3.8.6</version>
+        </dependency>
+
+        <!-- Pacchetto esterno Weka per utilizzare l'algoritmo SMOTE -->
+        <dependency>
+            <groupId>nz.ac.waikato.cms.weka</groupId>
+            <artifactId>SMOTE</artifactId>
+            <version>1.0.3</version>
+        </dependency>
     </dependencies>
 
 </project>

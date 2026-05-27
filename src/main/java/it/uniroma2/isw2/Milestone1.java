@@ -4,11 +4,15 @@ import it.uniroma2.isw2.git.GitMetricsExtractor;
 import it.uniroma2.isw2.jira.JiraFetcher;
 import it.uniroma2.isw2.model.ClassMetricsRow;
 import it.uniroma2.isw2.model.Release;
+import it.uniroma2.isw2.model.Ticket;
+import it.uniroma2.isw2.szz.BugLabeler;
+import it.uniroma2.isw2.szz.GitBugMapper;
+import it.uniroma2.isw2.szz.SzzCalculator;
 import it.uniroma2.isw2.utils.CsvExporter;
 
 import java.util.List;
 
-public class Main {
+public class Milestone1 {
 
     public static void main(String[] args) {
         String projectName = "AVRO";
@@ -34,7 +38,22 @@ public class Main {
 
             List<ClassMetricsRow> partialDataset = GitMetricsExtractor.extractMetrics(targetReleases, repoPath);
 
-            System.out.println("\n🎉 FASE 3 COMPLETATA! Estratte " + partialDataset.size() + " righe di dataset totali.");
+            System.out.println("\nFASE 3 COMPLETATA! Estratte " + partialDataset.size() + " righe di dataset totali.");
+
+            // 4. Fase Labeling: SZZ e Proportion Total
+            System.out.println("\n--- FASE 4: Labeling (SZZ e Proportion Total) ---");
+            
+            // a. Recuperiamo i Bug
+            List<Ticket> bugs = JiraFetcher.getBugs(projectName, allReleases);
+            
+            // b. Applichiamo SZZ per trovare IV, OV e FV
+            SzzCalculator.computeSzz(bugs, allReleases);
+            
+            // c. Troviamo i file Java modificati dai bug analizzando i commit di Git
+            GitBugMapper.mapBugsToFiles(bugs, repoPath);
+            
+            // d. Etichettiamo il dataset
+            BugLabeler.labelDataset(partialDataset, bugs, allReleases);
 
             // Stampiamo un campione per vedere se funziona
             System.out.println("\nEsempio di una riga del dataset (Tutte le 20 Metriche):");
@@ -67,15 +86,15 @@ public class Main {
                 System.out.println("Target (Buggy): " + sample.isBuggy());
             }
 
-            // 4. Fase Esportazione CSV
+            // 5. Fase Esportazione CSV
             String outputCsv = "avro_metrics_dataset.csv";
             CsvExporter.exportToCsv(partialDataset, outputCsv);
+            System.out.println("\n✅ Dataset esportato con successo in: " + outputCsv);
 
-        } catch (Exception e) {
+            } catch (Exception e) {
             System.err.println("Errore fatale nell'estrazione: " + e.getMessage());
             e.printStackTrace();
-        }
-    }
+            }    }
 
     /**
      * Data una lista cronologica (dalla più vecchia alla più nuova),
