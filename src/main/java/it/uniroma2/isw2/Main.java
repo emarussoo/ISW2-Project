@@ -4,6 +4,7 @@ import it.uniroma2.isw2.git.GitMetricsExtractor;
 import it.uniroma2.isw2.jira.JiraFetcher;
 import it.uniroma2.isw2.model.ClassMetricsRow;
 import it.uniroma2.isw2.model.Release;
+import it.uniroma2.isw2.utils.CsvExporter;
 
 import java.util.List;
 
@@ -36,15 +37,39 @@ public class Main {
             System.out.println("\n🎉 FASE 3 COMPLETATA! Estratte " + partialDataset.size() + " righe di dataset totali.");
 
             // Stampiamo un campione per vedere se funziona
-            System.out.println("Esempio di una riga del dataset:");
+            System.out.println("\nEsempio di una riga del dataset (Tutte le 20 Metriche):");
             if (!partialDataset.isEmpty()) {
                 ClassMetricsRow sample = partialDataset.get(0);
-                System.out.println("Release: " + sample.getReleaseId() + " | File: " + sample.getClassName());
-                System.out.println("LOC: " + sample.getSizeLoc() + " | NR: " + sample.getNumberOfRevisions() + " | NAuth: " + sample.getNumberOfAuthors() + " | NFix: " + sample.getnFix());
-                System.out.println("LOC Added (Tot/Max/Avg): " + sample.getLocAdded() + "/" + sample.getMaxLocAdded() + "/" + sample.getAverageLocAdded());
-                System.out.println("Churn (Tot/Max/Avg): " + sample.getChurn() + "/" + sample.getMaxChurn() + "/" + sample.getAverageChurn());
-                System.out.println("ChangeSet (Tot/Max/Avg): " + sample.getChangeSetSize() + "/" + sample.getMaxChangeSet() + "/" + sample.getAverageChangeSet());
+                System.out.println("Progetto: " + sample.getProjectName() + " | Release: " + sample.getReleaseId());
+                System.out.println("File: " + sample.getClassName());
+                System.out.println("Normalized File: " + sample.getNormalizedClassName());
+                System.out.println("1.  Size (LOC): " + sample.getSizeLoc());
+                System.out.println("2.  Number of Revisions (NR): " + sample.getNumberOfRevisions());
+                System.out.println("3.  Number of Authors (NAuth): " + sample.getNumberOfAuthors());
+                System.out.println("4.  Number of Fixes (NFix): " + sample.getnFix());
+                System.out.println("5.  Age in Days: " + sample.getAgeInDays());
+                System.out.println("6.  Weighted Age: " + sample.getWeightedAge());
+                System.out.println("7.  LOC Added (Tot): " + sample.getLocAdded());
+                System.out.println("8.  Max LOC Added: " + sample.getMaxLocAdded());
+                System.out.println("9.  Average LOC Added: " + sample.getAverageLocAdded());
+                System.out.println("10. LOC Deleted (Tot): " + sample.getLocDeleted());
+                System.out.println("11. Max LOC Deleted: " + sample.getMaxLocDeleted());
+                System.out.println("12. Average LOC Deleted: " + sample.getAverageLocDeleted());
+                System.out.println("13. Churn (Tot): " + sample.getChurn());
+                System.out.println("14. Max Churn: " + sample.getMaxChurn());
+                System.out.println("15. Average Churn: " + sample.getAverageChurn());
+                System.out.println("16. Change Set Size (Tot): " + sample.getChangeSetSize());
+                System.out.println("17. Max Change Set Size: " + sample.getMaxChangeSet());
+                System.out.println("18. Average Change Set Size: " + sample.getAverageChangeSet());
+                System.out.println("19. Average Number of Modified Directories (ND): " + String.format("%.2f", sample.getAverageNd()));
+                System.out.println("20. Average Entropy: " + String.format("%.4f", sample.getAverageEntropy()));
+                System.out.println("21. Number of Code Smells (NSmells): " + sample.getnSmells());
+                System.out.println("Target (Buggy): " + sample.isBuggy());
             }
+
+            // 4. Fase Esportazione CSV
+            String outputCsv = "avro_metrics_dataset.csv";
+            CsvExporter.exportToCsv(partialDataset, outputCsv);
 
         } catch (Exception e) {
             System.err.println("Errore fatale nell'estrazione: " + e.getMessage());

@@ -4,7 +4,8 @@ public class ClassMetricsRow {
     // Identificativi
     private String projectName;
     private String releaseId;
-    private String className;
+    private String className; // Contiene il path originale intero
+    private String normalizedClassName; // FQN o namespace pulito (es. org/apache/avro/...)
 
     // Metriche (Feature per il Machine Learning)
     private int sizeLoc;
@@ -25,13 +26,26 @@ public class ClassMetricsRow {
     private int maxChangeSet;
     private int averageChangeSet;                // Quante volte è stato buggato in passato
 
+    private int locDeleted;
+    private int maxLocDeleted;
+    private int averageLocDeleted;
+
+    private long weightedAge;
+    private double averageNd;
+    private double averageEntropy;
+
+    // Metriche Strutturali (Code Smells)
+    private int nSmells;
+
     // Target Label (Il risultato di SZZ/Proportion)
     private boolean buggy;
 
-    public ClassMetricsRow(String projectName, String releaseId, String className) {
+    public ClassMetricsRow(String projectName, String releaseId, String className, String normalizedClassName) {
         this.projectName = projectName;
         this.releaseId = releaseId;
         this.className = className;
+        this.normalizedClassName = normalizedClassName;
+        this.nSmells = 0; // Inizializziamo a zero
         this.buggy = false; // Di default assumiamo che la classe sia sana
     }
 
@@ -50,6 +64,10 @@ public class ClassMetricsRow {
         return className;
     }
 
+    public String getNormalizedClassName() {
+        return normalizedClassName;
+    }
+
     public void setProjectName(String projectName) {
         this.projectName = projectName;
     }
@@ -60,6 +78,10 @@ public class ClassMetricsRow {
 
     public void setClassName(String className) {
         this.className = className;
+    }
+
+    public void setNormalizedClassName(String normalizedClassName) {
+        this.normalizedClassName = normalizedClassName;
     }
 
     public int getSizeLoc() {
@@ -116,6 +138,30 @@ public class ClassMetricsRow {
 
     public int getAverageChangeSet() {
         return averageChangeSet;
+    }
+
+    public int getLocDeleted() {
+        return locDeleted;
+    }
+
+    public int getMaxLocDeleted() {
+        return maxLocDeleted;
+    }
+
+    public int getAverageLocDeleted() {
+        return averageLocDeleted;
+    }
+
+    public long getWeightedAge() {
+        return weightedAge;
+    }
+
+    public double getAverageNd() {
+        return averageNd;
+    }
+
+    public double getAverageEntropy() {
+        return averageEntropy;
     }
 
     public boolean isBuggy() {
@@ -178,7 +224,39 @@ public class ClassMetricsRow {
         this.averageChangeSet = averageChangeSet;
     }
 
+    public void setLocDeleted(int locDeleted) {
+        this.locDeleted = locDeleted;
+    }
+
+    public void setMaxLocDeleted(int maxLocDeleted) {
+        this.maxLocDeleted = maxLocDeleted;
+    }
+
+    public void setAverageLocDeleted(int averageLocDeleted) {
+        this.averageLocDeleted = averageLocDeleted;
+    }
+
+    public void setWeightedAge(long weightedAge) {
+        this.weightedAge = weightedAge;
+    }
+
+    public void setAverageNd(double averageNd) {
+        this.averageNd = averageNd;
+    }
+
+    public void setAverageEntropy(double averageEntropy) {
+        this.averageEntropy = averageEntropy;
+    }
+
     public void setBuggy(boolean buggy) {
         this.buggy = buggy;
+    }
+
+    public int getnSmells() {
+        return nSmells;
+    }
+
+    public void setnSmells(int nSmells) {
+        this.nSmells = nSmells;
     }
 }
