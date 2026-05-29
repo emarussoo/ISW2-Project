@@ -1,4 +1,4 @@
-package it.uniroma2.isw2.szz;
+package it.uniroma2.isw2.dataset.szz;
 
 import it.uniroma2.isw2.model.Ticket;
 import org.eclipse.jgit.api.Git;

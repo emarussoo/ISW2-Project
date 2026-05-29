@@ -1,13 +1,13 @@
-package it.uniroma2.isw2;
+package it.uniroma2.isw2.milestones;
 
-import it.uniroma2.isw2.git.GitMetricsExtractor;
-import it.uniroma2.isw2.jira.JiraFetcher;
+import it.uniroma2.isw2.dataset.git.GitMetricsExtractor;
+import it.uniroma2.isw2.dataset.jira.JiraFetcher;
 import it.uniroma2.isw2.model.ClassMetricsRow;
 import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.Ticket;
-import it.uniroma2.isw2.szz.BugLabeler;
-import it.uniroma2.isw2.szz.GitBugMapper;
-import it.uniroma2.isw2.szz.SzzCalculator;
+import it.uniroma2.isw2.dataset.szz.BugLabeler;
+import it.uniroma2.isw2.dataset.szz.GitBugMapper;
+import it.uniroma2.isw2.dataset.szz.SzzCalculator;
 import it.uniroma2.isw2.utils.CsvExporter;
 
 import java.util.List;
@@ -87,7 +87,7 @@ public class Milestone1 {
             }
 
             // 5. Fase Esportazione CSV
-            String outputCsv = "avro_metrics_dataset.csv";
+            String outputCsv = "results/milestone1/avro_metrics_dataset.csv";
             CsvExporter.exportToCsv(partialDataset, outputCsv);
             System.out.println("\n✅ Dataset esportato con successo in: " + outputCsv);
 

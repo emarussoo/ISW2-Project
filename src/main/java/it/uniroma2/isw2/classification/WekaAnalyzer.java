@@ -1,4 +1,4 @@
-package it.uniroma2.isw2.weka;
+package it.uniroma2.isw2.classification;
 
 import weka.attributeSelection.CfsSubsetEval;
 import weka.attributeSelection.GreedyStepwise;

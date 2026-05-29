@@ -1,4 +1,4 @@
-package it.uniroma2.isw2.jira;
+package it.uniroma2.isw2.dataset.jira;
 
 import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.Ticket;

@@ -1,4 +1,4 @@
-package it.uniroma2.isw2.git;
+package it.uniroma2.isw2.dataset.git;
 
 import it.uniroma2.isw2.model.ClassMetricsRow;
 import it.uniroma2.isw2.model.Release;
@@ -117,8 +117,11 @@ public class GitMetricsExtractor {
     private static void computeHistoricalMetrics(Repository repository, Git git, Path filePath, String projectDir, ClassMetricsRow row) {
         String relativePath = filePath.toString().substring(projectDir.length() + 1).replace("\\", "/");
 
-        try {
-            Iterable<RevCommit> logs = git.log().addPath(relativePath).call();
+        try (org.eclipse.jgit.revwalk.RevWalk walk = new org.eclipse.jgit.revwalk.RevWalk(repository)) {
+            walk.markStart(walk.parseCommit(repository.resolve("HEAD")));
+            org.eclipse.jgit.diff.DiffConfig diffConfig = repository.getConfig().get(org.eclipse.jgit.diff.DiffConfig.KEY);
+            org.eclipse.jgit.revwalk.FollowFilter followFilter = org.eclipse.jgit.revwalk.FollowFilter.create(relativePath, diffConfig);
+            walk.setTreeFilter(followFilter);
 
             int nr = 0;
             int nFix = 0;
@@ -136,13 +139,14 @@ public class GitMetricsExtractor {
 
             RevCommit firstCommit = null;
             RevCommit lastCommit = null;
+            String trackedPath = relativePath;
 
             try (DiffFormatter df = new DiffFormatter(DisabledOutputStream.INSTANCE)) {
                 df.setRepository(repository);
                 df.setDiffComparator(RawTextComparator.DEFAULT);
                 df.setDetectRenames(true);
 
-                for (RevCommit commit : logs) {
+                for (RevCommit commit : walk) {
                     nr++;
                     authors.add(commit.getAuthorIdent().getEmailAddress());
 
@@ -161,7 +165,15 @@ public class GitMetricsExtractor {
 
                     totalNd += computeNd(diffs);
 
-                    CommitMetrics commitMetrics = processCommitDiffs(df, diffs, relativePath);
+                    CommitMetrics commitMetrics = processCommitDiffs(df, diffs, trackedPath);
+
+                    // Update trackedPath if there is a rename/move in this commit
+                    for (DiffEntry diff : diffs) {
+                        if (diff.getNewPath().equals(trackedPath) && !diff.getOldPath().equals(trackedPath) && !diff.getOldPath().equals("/dev/null")) {
+                            trackedPath = diff.getOldPath();
+                            break;
+                        }
+                    }
 
                     int churnInCommit = commitMetrics.myLocAdded + commitMetrics.myLocDeleted;
 
