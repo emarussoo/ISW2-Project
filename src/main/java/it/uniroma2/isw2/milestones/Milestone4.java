@@ -175,6 +175,18 @@ public class Milestone4 {
                     System.out.println("\n✅ Classifica filtrata esportata in: " + csvPath);
                 }
 
+                if (!sortedSmells.isEmpty()) {
+                    ClassStats firstClass = sortedSmells.get(0);
+                    ClassStats lastClass = sortedSmells.get(sortedSmells.size() - 1);
+
+                    System.out.println("\n--- Dettaglio Smells Prima e Ultima Classe ---");
+                    System.out.println("Prima classe: " + firstClass.path);
+                    System.out.println("Ultima classe: " + lastClass.path);
+
+                    extractSmellsForClass(projectDir + "/" + firstClass.path, pmdBinPath, rulesets, "results/milestone4/first_class_smells.csv");
+                    extractSmellsForClass(projectDir + "/" + lastClass.path, pmdBinPath, rulesets, "results/milestone4/last_class_smells.csv");
+                }
+
                 // Ripristiniamo il branch originale
                 if (defaultBranch != null) {
                     System.out.println("Ripristino il branch originale: " + defaultBranch);
@@ -261,5 +273,24 @@ public class Milestone4 {
             // Ignoriamo in caso di fallimento della lettura (SUT non valido)
         }
         return metrics;
+    }
+
+    private static void extractSmellsForClass(String fullPath, String pmdBinPath, String rulesets, String outputCsvPath) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    pmdBinPath,
+                    "check",
+                    "-d", fullPath,
+                    "-R", rulesets,
+                    "-f", "csv",
+                    "-r", outputCsvPath
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            process.waitFor();
+            System.out.println("Esportato report PMD in: " + outputCsvPath);
+        } catch (Exception e) {
+            System.err.println("Errore durante l'estrazione degli smell per " + fullPath + ": " + e.getMessage());
+        }
     }
 }

@@ -1,0 +1,2 @@
+"Problem","Package","File","Priority","Line","Description","Rule set","Rule"
+"1","org.apache.avro.data","/Users/lele/Desktop/ISW2_project/avro/lang/java/avro/src/main/java/org/apache/avro/data/TimeConversions.java","3","77","The String literal ' = ' appears 5 times in this file; the first occurrence is on line 77","Error Prone","AvoidDuplicateLiterals"
