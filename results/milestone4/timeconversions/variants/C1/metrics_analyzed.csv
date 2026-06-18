@@ -1,0 +1,6 @@
+Section,Metric,Key,Value,Details
+PMD,totalViolations,,0,
+PMD,distinctRules,,0,
+PMD,distinctRuleSets,,0,
+PMD,distinctPriorities,,0,
+Section,Rule,RuleSet,Priority,Line,Description

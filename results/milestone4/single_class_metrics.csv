@@ -1,0 +1,2 @@
+ClassPath,TotalSmells,AssignmentInOperand,AvoidLiteralsInIfCondition,RelianceOnDefaultCharset,SignatureDeclareThrowsException,SystemPrintln,UseUtilityClass
+src/main/java/it/uniroma2/isw2/utils/PmdAnalyzer.java,7,1,1,1,1,2,1
