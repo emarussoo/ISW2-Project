@@ -1,296 +1,189 @@
 package it.uniroma2.isw2.milestones;
 
-import it.uniroma2.isw2.dataset.jira.JiraFetcher;
-import it.uniroma2.isw2.model.Release;
-import it.uniroma2.isw2.utils.PmdAnalyzer;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
-
-import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.PrintWriter;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
+import java.util.Properties;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 public class Milestone4 {
 
-    static class ClassStats {
-        String path;
-        int smells;
-        long loc;
-        int methods;
-        int decisions;
-
-        public ClassStats(String path, int smells, long loc, int methods, int decisions) {
-            this.path = path;
-            this.smells = smells;
-            this.loc = loc;
-            this.methods = methods;
-            this.decisions = decisions;
-        }
-    }
-
-    static class ClassMetrics {
-        boolean isValidSut;
-        int methods;
-        int decisions;
-    }
-
     public static void main(String[] args) {
-        String projectName = "AVRO";
-        String projectDir = "/Users/lele/Desktop/ISW2_project/avro";
-        String repoPath = projectDir + "/.git";
-        String pmdBinPath = "/Users/lele/IdeaProjects/ISW2-Project/pmd/bin/pmd";
-        String rulesets = "category/java/design.xml,category/java/errorprone.xml,category/java/bestpractices.xml";
 
-        System.out.println("--- FASE 0 (Milestone 4): Code Smells Ranking sull'ultima Release ---");
-        System.out.println("Criteri di filtro attivi (10 regole rigorose):");
-        System.out.println("1. Solo file sotto src/main/java");
-        System.out.println("2. Esclusi test, examples, integration-test");
-        System.out.println("3. Code Smells > 0");
-        System.out.println("4. LOC >= 100");
-        System.out.println("5. methodCount >= 3");
-        System.out.println("6. decisionCount >= 1");
-        System.out.println("7. Esclusi Exception.java, Error.java, package-info.java, module-info.java");
-        System.out.println("8-10. Escluse interfacce pure, enum banali, classi di sole costanti");
+        // 1. Load variables from the .env file
+        String projectKey = "";
+        String apiToken = "";
 
-        try {
-            // 1. Recupero le release da Jira
-            System.out.println("\nRecupero le release di " + projectName + " da Jira...");
-            List<Release> allReleases = JiraFetcher.getReleases(projectName);
-            if (allReleases.isEmpty()) {
-                System.err.println("Nessuna release trovata per il progetto " + projectName);
+        try (FileInputStream fis = new FileInputStream(".env")) {
+            Properties env = new Properties();
+            env.load(fis);
+
+            projectKey = env.getProperty("SONAR_PROJECT_KEY");
+            apiToken = env.getProperty("SONAR_TOKEN");
+
+            // Security check if the .env file is empty or missing keys
+            if (projectKey == null || apiToken == null) {
+                System.err.println("Error: SONAR_PROJECT_KEY or SONAR_TOKEN missing in the .env file");
                 return;
             }
-            
-            // Prendiamo l'ultima release in ordine cronologico
-            Release latestRelease = allReleases.get(allReleases.size() - 1);
-            System.out.println("L'ultima release trovata è: " + latestRelease.getName());
+        } catch (Exception e) {
+            System.err.println("Error: Unable to read the .env file. Ensure it exists in the project root.");
+            return;
+        }
 
-            // 2. Checkout della release usando JGit
-            FileRepositoryBuilder builder = new FileRepositoryBuilder();
-            Repository repository = builder.setGitDir(new File(repoPath))
-                    .readEnvironment()
-                    .findGitDir()
-                    .setMustExist(true)
-                    .build();
+        // Filter parameters
+        int minLinesOfCode = 150;
+        int minSmells = 1;
 
-            String defaultBranch;
-            try (Git git = new Git(repository)) {
-                List<Ref> tags = git.tagList().call();
-                defaultBranch = repository.getFullBranch();
+        try {
+            HttpClient httpClient = HttpClient.newHttpClient();
+            Gson gson = new Gson();
+            String auth = Base64.getEncoder().encodeToString((apiToken + ":").getBytes());
 
-                Ref matchingTag = findMatchingTag(tags, latestRelease.getName());
-                if (matchingTag == null) {
-                    System.err.println("Tag non trovato per la release: " + latestRelease.getName());
-                    return;
-                }
+            // Expanded array: [0] Path, [1] Smells, [2] LOC, [3] Exact Key
+            List<String[]> foundClasses = new ArrayList<>();
+            int page = 1;
+            int pageSize = 500;
+            int total = 0;
 
-                System.out.println("Effettuo il checkout del tag: " + matchingTag.getName());
-                git.checkout().setName(matchingTag.getName()).call();
-                
-                // 3. Esecuzione PMD
-                System.out.println("Esecuzione PMD sul progetto in corso...");
-                Map<String, Integer> smellsMap = PmdAnalyzer.extractSmells(projectDir, pmdBinPath, rulesets);
+            System.out.println("1. Scanning the project...");
 
-                // Filtriamo e raccogliamo i risultati in una lista
-                List<ClassStats> sortedSmells = new ArrayList<>();
-                for (Map.Entry<String, Integer> entry : smellsMap.entrySet()) {
-                    String path = entry.getKey();
-                    int smells = entry.getValue();
-                    String lowerPath = path.toLowerCase();
-                    
-                    // Normalizziamo i separatori di percorso
-                    String normalizedPath = lowerPath.replace("\\", "/");
+            // Retrieve the component tree to find files and metrics
+            do {
+                String url = String.format("https://sonarcloud.io/api/measures/component_tree?component=%s&metricKeys=code_smells,ncloc&qualifiers=FIL&ps=%d&p=%d",
+                        projectKey, pageSize, page);
 
-                    // 1. Solo file sotto src/main/java
-                    boolean isSrcMainJava = normalizedPath.contains("src/main/java");
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Authorization", "Basic " + auth)
+                        .GET()
+                        .build();
 
-                    // 2. Esclusi test, examples, integration-test
-                    boolean isTest = normalizedPath.contains("src/test") ||
-                                     normalizedPath.contains("/test/") || 
-                                     normalizedPath.contains("/testing/") || 
-                                     normalizedPath.endsWith("test.java") || 
-                                     normalizedPath.endsWith("tests.java") ||
-                                     normalizedPath.contains("doc/examples") ||
-                                     normalizedPath.contains("integration-test");
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
+                JsonArray components = jsonResponse.getAsJsonArray("components");
 
-                    // 7. Esclusi Exception.java, Error.java, package-info.java, module-info.java
-                    boolean isExcludedName = normalizedPath.endsWith("exception.java") ||
-                                             normalizedPath.endsWith("error.java") ||
-                                             normalizedPath.endsWith("package-info.java") ||
-                                             normalizedPath.endsWith("module-info.java");
+                for (JsonElement element : components) {
+                    JsonObject component = element.getAsJsonObject();
+                    String path = component.get("path").getAsString();
+                    String exactKey = component.get("key").getAsString();
 
-                    // 3. Code Smells > 0 (implicito nel ciclo se filtriamo > 0)
-                    if (isSrcMainJava && !isTest && !isExcludedName && smells > 0) {
-                        String fullPath = projectDir + "/" + path;
-                        long loc = countLinesOfCode(fullPath);
-                        
-                        // 4. LOC >= 100
-                        if (loc >= 100) {
-                            ClassMetrics metrics = analyzeClass(fullPath);
-                            
-                            // 5, 6, 8, 9, 10
-                            if (metrics.isValidSut && metrics.methods >= 3 && metrics.decisions >= 1) {
-                                sortedSmells.add(new ClassStats(path, smells, loc, metrics.methods, metrics.decisions));
+                    if (path.endsWith(".java")) {
+                        JsonArray measures = component.getAsJsonArray("measures");
+                        int smells = 0;
+                        int ncloc = 0;
+
+                        if (measures != null) {
+                            for (JsonElement mElement : measures) {
+                                JsonObject measureObj = mElement.getAsJsonObject();
+                                String metric = measureObj.get("metric").getAsString();
+
+                                if (measureObj.has("value")) {
+                                    int val = Integer.parseInt(measureObj.get("value").getAsString());
+                                    if ("code_smells".equals(metric)) smells = val;
+                                    if ("ncloc".equals(metric)) ncloc = val;
+                                }
                             }
+                        }
+
+                        if (ncloc > minLinesOfCode && smells >= minSmells) {
+                            foundClasses.add(new String[]{path, String.valueOf(smells), String.valueOf(ncloc), exactKey});
                         }
                     }
                 }
 
-                // Ordiniamo la lista in ordine decrescente per numero di code smells
-                sortedSmells.sort((e1, e2) -> Integer.compare(e2.smells, e1.smells));
+                total = jsonResponse.getAsJsonObject("paging").get("total").getAsInt();
+                page++;
 
-                System.out.println("\n--- Top 20 Classi (SUT) filtrate (" + latestRelease.getName() + ") ---");
-                if (sortedSmells.isEmpty()) {
-                    System.out.println("Nessun code smell trovato o nessuna classe corrispondente ai criteri.");
-                } else {
-                    for (int i = 0; i < Math.min(20, sortedSmells.size()); i++) {
-                        ClassStats entry = sortedSmells.get(i);
-                        System.out.println((i + 1) + ". " + entry.path + " -> " + entry.smells + 
-                                           " smells (LOC: " + entry.loc + ", Methods: " + entry.methods + 
-                                           ", Decisions: " + entry.decisions + ")");
-                    }
-                }
+            } while ((page - 1) * pageSize < total);
 
-                // Esportazione in CSV
-                File outDir = new File("results/milestone4");
-                if (!outDir.exists()) {
-                    outDir.mkdirs();
-                }
+            if (foundClasses.isEmpty()) {
+                System.out.println("No classes found matching the specified criteria.");
+                return;
+            }
 
-                String csvPath = "results/milestone4/class_smells_ranking.csv";
-                try (PrintWriter pw = new PrintWriter(new File(csvPath))) {
-                    pw.println("Class,Code Smells,LOC,Methods,Decisions");
-                    for (ClassStats entry : sortedSmells) {
-                        pw.println(entry.path + "," + entry.smells + "," + entry.loc + "," + entry.methods + "," + entry.decisions);
-                    }
-                    System.out.println("\n✅ Classifica filtrata esportata in: " + csvPath);
-                }
+            // Sort the list in descending order by number of smells
+            foundClasses.sort((a, b) -> Integer.parseInt(b[1]) - Integer.parseInt(a[1]));
 
-                if (!sortedSmells.isEmpty()) {
-                    ClassStats firstClass = sortedSmells.get(0);
-                    ClassStats lastClass = sortedSmells.get(sortedSmells.size() - 1);
-
-                    System.out.println("\n--- Dettaglio Smells Prima e Ultima Classe ---");
-                    System.out.println("Prima classe: " + firstClass.path);
-                    System.out.println("Ultima classe: " + lastClass.path);
-
-                    extractSmellsForClass(projectDir + "/" + firstClass.path, pmdBinPath, rulesets, "results/milestone4/first_class_smells.csv");
-                    extractSmellsForClass(projectDir + "/" + lastClass.path, pmdBinPath, rulesets, "results/milestone4/last_class_smells.csv");
-                }
-
-                // Ripristiniamo il branch originale
-                if (defaultBranch != null) {
-                    System.out.println("Ripristino il branch originale: " + defaultBranch);
-                    git.checkout().setName(defaultBranch).call();
+            // 2. Export the general report with ALL classes
+            System.out.println("\n2. Generating complete report: smells_ranking.csv...");
+            try (PrintWriter writer = new PrintWriter(new FileWriter("smells_ranking.csv"))) {
+                writer.println("Class_Path,Code_Smells,Lines_Of_Code");
+                for (String[] data : foundClasses) {
+                    writer.printf("\"%s\",%s,%s%n", data[0], data[1], data[2]);
                 }
             }
 
+            // 3. Identify the first and last class and export the details
+            String[] worstClass = foundClasses.get(0);
+            String[] bestClass = foundClasses.get(foundClasses.size() - 1);
+
+            System.out.println("\n3. Extracting details for the extremes:");
+            System.out.println("- Worst: " + worstClass[0] + " (" + worstClass[1] + " smells)");
+            System.out.println("- Best (above threshold): " + bestClass[0] + " (" + bestClass[1] + " smells)\n");
+
+            exportSmellsDetail(httpClient, gson, auth, worstClass[3], "first_class_smells.csv");
+
+            if (foundClasses.size() > 1) {
+                exportSmellsDetail(httpClient, gson, auth, bestClass[3], "last_class_smells.csv");
+            }
+
+            System.out.println("\nProcess completed successfully!");
+
         } catch (Exception e) {
-            System.err.println("Errore durante l'esecuzione: " + e.getMessage());
+            System.err.println("An error occurred:");
             e.printStackTrace();
         }
     }
 
-    private static Ref findMatchingTag(List<Ref> tags, String releaseName) {
-        for (Ref tag : tags) {
-            if (tag.getName().contains(releaseName)) return tag;
-        }
-        return null;
-    }
+    private static void exportSmellsDetail(HttpClient client, Gson gson, String auth, String componentKey, String outputCsvName) throws Exception {
+        String encodedComponent = URLEncoder.encode(componentKey, StandardCharsets.UTF_8);
+        String url = "https://sonarcloud.io/api/issues/search?componentKeys=" + encodedComponent + "&types=CODE_SMELL&ps=500";
 
-    private static long countLinesOfCode(String filePath) {
-        try (Stream<String> lines = Files.lines(Paths.get(filePath))) {
-            return lines.filter(line -> !line.trim().isEmpty()).count();
-        } catch (Exception e) {
-            return 0;
-        }
-    }
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Basic " + auth)
+                .GET()
+                .build();
 
-    /**
-     * Analizza il contenuto della classe per calcolare methodCount, decisionCount
-     * e validare le condizioni (interfacce, enum banali, classi sole costanti).
-     */
-    private static ClassMetrics analyzeClass(String filePath) {
-        ClassMetrics metrics = new ClassMetrics();
-        metrics.isValidSut = false;
-        metrics.methods = 0;
-        metrics.decisions = 0;
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        JsonObject jsonResponse = gson.fromJson(response.body(), JsonObject.class);
+        JsonArray issues = jsonResponse.getAsJsonArray("issues");
 
-        try {
-            String content = new String(Files.readAllBytes(Paths.get(filePath)));
-            // Rimuoviamo i commenti per evitare falsi positivi
-            String cleanContent = content.replaceAll("//.*", "");
-            cleanContent = cleanContent.replaceAll("(?s)/\\*.*?\\*/", "");
+        int count = issues != null ? issues.size() : 0;
+        System.out.printf("  -> Writing %s (%d issues found)...%n", outputCsvName, count);
 
-            Matcher mClass = Pattern.compile("\\bclass\\b").matcher(cleanContent);
-            Matcher mInterface = Pattern.compile("\\binterface\\b").matcher(cleanContent);
-            Matcher mEnum = Pattern.compile("\\benum\\b").matcher(cleanContent);
+        try (PrintWriter writer = new PrintWriter(new FileWriter(outputCsvName))) {
+            writer.println("Line,Severity,Rule,Message");
 
-            boolean hasClass = mClass.find();
-            boolean hasInterface = mInterface.find();
-            boolean hasEnum = mEnum.find();
+            if (issues != null && count > 0) {
+                for (JsonElement element : issues) {
+                    JsonObject issue = element.getAsJsonObject();
 
-            // 8. Scarta interfacce pure
-            if (hasInterface && !hasClass && !hasEnum) {
-                return metrics;
-            }
+                    String line = issue.has("line") ? issue.get("line").getAsString() : "N/A";
+                    String severity = issue.has("severity") ? issue.get("severity").getAsString() : "N/A";
+                    String rule = issue.has("rule") ? issue.get("rule").getAsString() : "N/A";
+                    String message = issue.has("message") ? issue.get("message").getAsString() : "N/A";
 
-            // 9. Scarta enum banali
-            if (hasEnum && !hasClass) {
-                if (!cleanContent.contains(";")) {
-                    return metrics;
+                    message = message.replace("\"", "'");
+                    writer.printf("%s,%s,%s,\"%s\"%n", line, severity, rule, message);
                 }
+            } else {
+                writer.println("N/A,N/A,N/A,\"No details returned by the API\"");
             }
-
-            // 5. Conta metodi (ignorando costrutti di controllo come if, for, ecc.)
-            Matcher mMethod = Pattern.compile("\\b(?!if|for|while|switch|catch)(\\w+)\\s*\\([^{;]*\\)\\s*(?:\\{|throws)").matcher(cleanContent);
-            while (mMethod.find()) {
-                metrics.methods++;
-            }
-
-            // 10. Scarta classi di sole costanti (se è una class ma non ha metodi)
-            if (hasClass && metrics.methods == 0) {
-                return metrics;
-            }
-
-            // 6. Conta decisioni (McCabe euristico)
-            Matcher mDecision = Pattern.compile("\\b(if|for|while|case|catch)\\b|\\?").matcher(cleanContent);
-            while (mDecision.find()) {
-                metrics.decisions++;
-            }
-
-            metrics.isValidSut = true;
-        } catch (Exception e) {
-            // Ignoriamo in caso di fallimento della lettura (SUT non valido)
-        }
-        return metrics;
-    }
-
-    private static void extractSmellsForClass(String fullPath, String pmdBinPath, String rulesets, String outputCsvPath) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                    pmdBinPath,
-                    "check",
-                    "-d", fullPath,
-                    "-R", rulesets,
-                    "-f", "csv",
-                    "-r", outputCsvPath
-            );
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            process.waitFor();
-            System.out.println("Esportato report PMD in: " + outputCsvPath);
-        } catch (Exception e) {
-            System.err.println("Errore durante l'estrazione degli smell per " + fullPath + ": " + e.getMessage());
         }
     }
 }

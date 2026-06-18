@@ -1,3 +1,0 @@
-Class,Code Smells,LOC,Methods,Decisions
-lang/java/avro/src/main/java/org/apache/avro/Schema.java,138,2004,266,230
-lang/java/avro/src/main/java/org/apache/avro/data/TimeConversions.java,1,280,50,2
