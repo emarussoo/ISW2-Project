@@ -18,6 +18,7 @@ import weka.filters.supervised.instance.Resample;
 import weka.filters.supervised.instance.SMOTE;
 import weka.filters.supervised.instance.SpreadSubsample;
 import weka.filters.unsupervised.attribute.Remove;
+import weka.filters.unsupervised.attribute.Standardize;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -33,202 +34,320 @@ public class WekaEvaluator {
     private static final String[] FEATURE_SELECTION = {"None", "InfoGain"};
     private static final String[] BALANCING = {"None", "Undersampling", "Oversampling", "SMOTE"};
 
+    private static final int NUMBER_OF_REPETITIONS = 10;
+    private static final int NUMBER_OF_FOLDS = 10;
+    private static final int RANDOM_FOREST_TREES = 100;
+    private static final int IBK_NEIGHBORS = 3;
+    private static final int DEFAULT_SMOTE_NEIGHBORS = 5;
+
     public void runExperiment(String datasetPath, String outputPath) throws Exception {
-        // 1. Load Data
+        // 1. Load data.
         CSVLoader loader = new CSVLoader();
         loader.setSource(new File(datasetPath));
         Instances data = loader.getDataSet();
 
-        // 2. Preprocessing: Remove IDs (Project, Release, File, Normalized_File)
-        // Note: This is safe to do on the whole dataset as it does not cause data leakage.
+        // 2. Remove non-predictive identifiers:
+        // Project, Release, File, Normalized_File.
+        // This operation does not use the target values and does not cause leakage.
         Remove remove = new Remove();
         remove.setAttributeIndices("1-4");
         remove.setInputFormat(data);
         data = Filter.useFilter(data, remove);
 
-        // Set the target class (Buggy) which is the last attribute now
+        // The target attribute Buggy is the last remaining attribute.
         data.setClassIndex(data.numAttributes() - 1);
+        requireClassValue(data, "Yes");
+        requireClassValue(data, "No");
 
-        try (PrintWriter writer = new PrintWriter(new FileWriter(outputPath))) {
-            // Write CSV Header
-            writer.println("Dataset,Classifier,Balancing,FeatureSelection,Iteration,Fold,Precision,Recall,AUC,Kappa,NPofB20");
+        File outputFile = new File(outputPath);
+        File parentDirectory = outputFile.getParentFile();
+        if (parentDirectory != null && !parentDirectory.exists()
+                && !parentDirectory.mkdirs()) {
+            throw new IllegalStateException(
+                    "Unable to create output directory: " + parentDirectory);
+        }
 
-            // Cartesian Product
+        try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile))) {
+            writer.println(
+                    "Dataset,Classifier,Balancing,FeatureSelection," +
+                            "Iteration,Fold,Precision,Recall,FMeasure,AUC,Kappa,NPofB20");
+
             for (String clfName : CLASSIFIERS) {
                 for (String fsName : FEATURE_SELECTION) {
                     for (String balName : BALANCING) {
-                        System.out.printf("Running: %s | %s | %s%n", clfName, fsName, balName);
-                        execute10x10Fold(data, clfName, fsName, balName, writer, "AVRO");
+                        System.out.printf(
+                                "Running: %s | %s | %s%n",
+                                clfName, fsName, balName);
+                        execute10x10Fold(
+                                data, clfName, fsName, balName, writer, "AVRO");
                     }
                 }
             }
         }
     }
 
-    private void execute10x10Fold(Instances data, String clfName, String fsName, String balName, PrintWriter writer, String datasetName) throws Exception {
-        // 10 times 10-fold CV
-        for (int i = 0; i < 10; i++) {
-            // Shuffle data with a different seed for each iteration
+    private void execute10x10Fold(
+            Instances data,
+            String clfName,
+            String fsName,
+            String balName,
+            PrintWriter writer,
+            String datasetName) throws Exception {
+
+        for (int iteration = 0; iteration < NUMBER_OF_REPETITIONS; iteration++) {
+            // Different deterministic partition for each repetition.
             Instances seedData = new Instances(data);
-            seedData.randomize(new Random(i + 1)); // i+1 to avoid seed 0 issues if any
-            seedData.stratify(10); // Maintain class distribution in folds
+            seedData.randomize(new Random(iteration + 1));
+            seedData.stratify(NUMBER_OF_FOLDS);
 
-            for (int fold = 0; fold < 10; fold++) {
-                Instances train = seedData.trainCV(10, fold);
-                Instances test = seedData.testCV(10, fold);
+            for (int fold = 0; fold < NUMBER_OF_FOLDS; fold++) {
+                Instances train = seedData.trainCV(NUMBER_OF_FOLDS, fold);
+                Instances test = seedData.testCV(NUMBER_OF_FOLDS, fold);
 
-                // Configure base classifier
-                Classifier baseClassifier = getBaseClassifier(clfName);
+                int experimentSeed = 1000 * (iteration + 1) + fold + 1;
+                int buggyClassIndex = requireClassValue(train, "Yes");
+                int cleanClassIndex = requireClassValue(train, "No");
 
-                // Setup FilteredClassifier to prevent DATA LEAKAGE!
-                // Filters applied here are computed ONLY on the 'train' set.
-                FilteredClassifier fc = new FilteredClassifier();
-                fc.setClassifier(baseClassifier);
+                Classifier baseClassifier =
+                        getBaseClassifier(clfName, experimentSeed);
 
-                MultiFilter multiFilter = new MultiFilter();
+                // FilteredClassifier fits every filter exclusively on the
+                // current training fold, preventing data leakage.
+                FilteredClassifier filteredClassifier = new FilteredClassifier();
+                filteredClassifier.setClassifier(baseClassifier);
+
                 List<Filter> filters = new ArrayList<>();
 
-                // Apply Feature Selection
-                if (fsName.equals("InfoGain")) {
-                    AttributeSelection filter = new AttributeSelection();
-                    InfoGainAttributeEval eval = new InfoGainAttributeEval();
-                    Ranker search = new Ranker();
-                    search.setThreshold(0.0);
-                    // Select Top 50% of features (excluding the class attribute)
+                // Select the top 50% of the predictive attributes.
+                // With 21 metrics, this retains the 10 highest-ranked metrics.
+                if ("InfoGain".equals(fsName)) {
+                    AttributeSelection attributeSelection = new AttributeSelection();
+                    InfoGainAttributeEval evaluator = new InfoGainAttributeEval();
+                    Ranker ranker = new Ranker();
+                    ranker.setThreshold(0.0);
                     int numToSelect = (train.numAttributes() - 1) / 2;
-                    search.setNumToSelect(numToSelect);
-                    filter.setEvaluator(eval);
-                    filter.setSearch(search);
-                    filters.add(filter);
+                    ranker.setNumToSelect(numToSelect);
+                    attributeSelection.setEvaluator(evaluator);
+                    attributeSelection.setSearch(ranker);
+                    filters.add(attributeSelection);
                 }
 
-                // Apply Balancing
-                switch (balName) {
-                    case "Undersampling":
-                        SpreadSubsample spreadSubsample = new SpreadSubsample();
-                        spreadSubsample.setDistributionSpread(1.0); // 1:1 ratio
-                        filters.add(spreadSubsample);
-                        break;
-                    case "Oversampling":
-                        Resample resample = new Resample();
-                        resample.setNoReplacement(false);
-                        resample.setBiasToUniformClass(1.0); // uniform distribution
-                        
-                        // we need to set sample size to match majority class
-                        // we can approximate this by doubling the dataset or ensuring uniform class
-                        // A simple Resample with bias 1.0 achieves uniformity.
-                        int majorityCount = Math.max(getInstancesCountByClass(train, 0), getInstancesCountByClass(train, 1));
-                        double percentage = (majorityCount * 2.0 / train.numInstances()) * 100.0;
-                        resample.setSampleSizePercent(percentage);
-                        filters.add(resample);
-                        break;
-                    case "SMOTE":
-                        SMOTE smote = new SMOTE();
-                        filters.add(smote);
-                        break;
-                    default:
-                        // None
-                        break;
+                // IBk is distance-based. Standardization prevents attributes
+                // with larger numeric scales from dominating the distance.
+                if ("IBk".equals(clfName)) {
+                    filters.add(new Standardize());
                 }
+
+                addBalancingFilter(
+                        filters,
+                        balName,
+                        train,
+                        buggyClassIndex,
+                        cleanClassIndex,
+                        experimentSeed);
 
                 if (!filters.isEmpty()) {
+                    MultiFilter multiFilter = new MultiFilter();
                     multiFilter.setFilters(filters.toArray(new Filter[0]));
-                    fc.setFilter(multiFilter);
+                    filteredClassifier.setFilter(multiFilter);
                 }
 
-                // Build Classifier (Train phase, filters are built internally here!)
-                fc.buildClassifier(train);
+                filteredClassifier.buildClassifier(train);
 
-                // Evaluate Model on Test Set
-                Evaluation eval = new Evaluation(train);
-                eval.evaluateModel(fc, test);
+                Evaluation evaluation = new Evaluation(train);
+                evaluation.evaluateModel(filteredClassifier, test);
 
-                // Extract standard metrics (assuming Buggy = 'Yes' is index 1, usually Yes is index 1 or 0 depending on data)
-                // Let's identify the index of the defective class ('Yes')
-                int buggyClassIndex = train.classAttribute().indexOfValue("Yes");
-                if (buggyClassIndex == -1) buggyClassIndex = 1; // Fallback
+                double precision = evaluation.precision(buggyClassIndex);
+                double recall = evaluation.recall(buggyClassIndex);
+                double fMeasure = evaluation.fMeasure(buggyClassIndex);
+                double auc = evaluation.areaUnderROC(buggyClassIndex);
+                double kappa = evaluation.kappa();
+                double npofb20 = calculateNPofB20(
+                        filteredClassifier, test, buggyClassIndex);
 
-                double precision = eval.precision(buggyClassIndex);
-                double recall = eval.recall(buggyClassIndex);
-                double auc = eval.areaUnderROC(buggyClassIndex);
-                double kappa = eval.kappa();
-
-                // Calculate Effort-Aware Metric (NPofB20)
-                double npofb20 = calculateNPofB20(fc, test, buggyClassIndex);
-
-                // Scrivi Riga nel CSV
-                writer.printf(java.util.Locale.US, "%s,%s,%s,%s,%d,%d,%.4f,%.4f,%.4f,%.4f,%.4f%n",
-                        datasetName, clfName, balName, fsName, (i + 1), (fold + 1),
-                        precision, recall, auc, kappa, npofb20);
+                writer.printf(
+                        java.util.Locale.US,
+                        "%s,%s,%s,%s,%d,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f%n",
+                        datasetName,
+                        clfName,
+                        balName,
+                        fsName,
+                        iteration + 1,
+                        fold + 1,
+                        precision,
+                        recall,
+                        fMeasure,
+                        auc,
+                        kappa,
+                        npofb20);
             }
         }
     }
 
+    private void addBalancingFilter(
+            List<Filter> filters,
+            String balName,
+            Instances train,
+            int buggyClassIndex,
+            int cleanClassIndex,
+            int experimentSeed) throws Exception {
+
+        int buggyCount = getInstancesCountByClass(train, buggyClassIndex);
+        int cleanCount = getInstancesCountByClass(train, cleanClassIndex);
+        int minorityCount = Math.min(buggyCount, cleanCount);
+        int majorityCount = Math.max(buggyCount, cleanCount);
+
+        switch (balName) {
+            case "Undersampling":
+                SpreadSubsample undersampling = new SpreadSubsample();
+                undersampling.setDistributionSpread(1.0);
+                undersampling.setRandomSeed(experimentSeed);
+                filters.add(undersampling);
+                break;
+
+            case "Oversampling":
+                Resample oversampling = new Resample();
+                oversampling.setNoReplacement(false);
+                oversampling.setBiasToUniformClass(1.0);
+                oversampling.setRandomSeed(experimentSeed);
+
+                // Final sample size: approximately twice the majority class,
+                // so both classes contain approximately majorityCount items.
+                double sampleSizePercentage =
+                        (majorityCount * 2.0 / train.numInstances()) * 100.0;
+                oversampling.setSampleSizePercent(sampleSizePercentage);
+                filters.add(oversampling);
+                break;
+
+            case "SMOTE":
+                if (minorityCount < 2) {
+                    throw new IllegalStateException(
+                            "SMOTE requires at least two minority instances; found "
+                                    + minorityCount);
+                }
+
+                SMOTE smote = new SMOTE();
+                smote.setRandomSeed(experimentSeed);
+                smote.setNearestNeighbors(
+                        Math.min(DEFAULT_SMOTE_NEIGHBORS, minorityCount - 1));
+
+                // Generate enough synthetic minority instances to obtain an
+                // approximately balanced 1:1 training distribution.
+                double smotePercentage =
+                        ((majorityCount - minorityCount) * 100.0) / minorityCount;
+                smote.setPercentage(smotePercentage);
+                filters.add(smote);
+                break;
+
+            case "None":
+                break;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Unknown balancing technique: " + balName);
+        }
+    }
+
+    private int requireClassValue(Instances data, String value) {
+        int index = data.classAttribute().indexOfValue(value);
+        if (index < 0) {
+            throw new IllegalStateException(
+                    "The class attribute does not contain the value '" + value + "'");
+        }
+        return index;
+    }
+
     private int getInstancesCountByClass(Instances train, int classValue) {
         int count = 0;
-        for (Instance inst : train) {
-            if (inst.classValue() == classValue) {
+        for (Instance instance : train) {
+            if ((int) instance.classValue() == classValue) {
                 count++;
             }
         }
         return count;
     }
 
-    private Classifier getBaseClassifier(String clfName) {
+    private Classifier getBaseClassifier(String clfName, int experimentSeed) {
         switch (clfName) {
-            case "RandomForest": return new RandomForest();
-            case "NaiveBayes": return new NaiveBayes();
-            case "IBk": return new IBk();
-            default: throw new IllegalArgumentException("Unknown classifier: " + clfName);
+            case "RandomForest":
+                RandomForest randomForest = new RandomForest();
+                randomForest.setNumIterations(RANDOM_FOREST_TREES);
+                randomForest.setSeed(experimentSeed);
+                return randomForest;
+
+            case "NaiveBayes":
+                return new NaiveBayes();
+
+            case "IBk":
+                IBk ibk = new IBk();
+                ibk.setKNN(IBK_NEIGHBORS);
+                return ibk;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Unknown classifier: " + clfName);
         }
     }
 
-    private double calculateNPofB20(Classifier fc, Instances test, int buggyClassIndex) throws Exception {
-        // Effort-Aware evaluation
+    private double calculateNPofB20(
+            Classifier classifier,
+            Instances test,
+            int buggyClassIndex) throws Exception {
+
+        if (test.attribute("Size_LOC") == null) {
+            throw new IllegalStateException(
+                    "The dataset does not contain the Size_LOC attribute");
+        }
         int locIndex = test.attribute("Size_LOC").index();
 
         List<InstanceScore> scores = new ArrayList<>();
-        double totalBugs = 0;
-        double totalLoc = 0;
+        double totalBugs = 0.0;
+        double totalLoc = 0.0;
 
         for (Instance instance : test) {
             double loc = instance.value(locIndex);
             totalLoc += loc;
 
-            if (instance.classValue() == buggyClassIndex) {
+            boolean buggy = (int) instance.classValue() == buggyClassIndex;
+            if (buggy) {
                 totalBugs++;
             }
 
-            double[] distribution = fc.distributionForInstance(instance);
-            double probBuggy = distribution[buggyClassIndex];
+            double[] distribution = classifier.distributionForInstance(instance);
+            double probabilityBuggy = distribution[buggyClassIndex];
+            double defectDensity = loc > 0.0 ? probabilityBuggy / loc : 0.0;
 
-            // Defect Density
-            double defectDensity = loc > 0 ? probBuggy / loc : 0;
-            scores.add(new InstanceScore(instance.classValue() == buggyClassIndex, loc, probBuggy, defectDensity));
+            scores.add(new InstanceScore(buggy, loc, defectDensity));
         }
 
-        if (totalBugs == 0 || totalLoc == 0) {
+        if (totalBugs == 0.0 || totalLoc == 0.0) {
             return 0.0;
         }
 
-        // Sort descending by Defect Density
-        scores.sort(Comparator.comparingDouble(InstanceScore::getDefectDensity).reversed());
+        scores.sort(
+                Comparator.comparingDouble(InstanceScore::getDefectDensity)
+                        .reversed());
 
-        double inspectedLoc = 0;
-        double bugsFound = 0;
-        double locLimit = totalLoc * 0.20; // 20% of total LOC
+        double inspectedLoc = 0.0;
+        double bugsFound = 0.0;
+        double locLimit = totalLoc * 0.20;
 
         for (InstanceScore score : scores) {
+            if (inspectedLoc >= locLimit) {
+                break;
+            }
+
             if (inspectedLoc + score.getLoc() <= locLimit) {
                 inspectedLoc += score.getLoc();
                 if (score.isBuggy()) {
                     bugsFound++;
                 }
             } else {
-                // Fractional inclusion of the last instance to precisely hit 20% LOC
+                // Fractional inclusion of the last class to reach exactly
+                // 20% of the test-set LOC budget.
                 double remainingLoc = locLimit - inspectedLoc;
-                if (score.isBuggy()) {
-                    bugsFound += (remainingLoc / score.getLoc());
+                if (score.isBuggy() && score.getLoc() > 0.0) {
+                    bugsFound += remainingLoc / score.getLoc();
                 }
                 break;
             }
@@ -237,23 +356,27 @@ public class WekaEvaluator {
         return bugsFound / totalBugs;
     }
 
-    // Helper class for sorting instances based on predicted defect density
     private static class InstanceScore {
         private final boolean buggy;
         private final double loc;
-        private final double probability;
         private final double defectDensity;
 
-        public InstanceScore(boolean buggy, double loc, double probability, double defectDensity) {
+        InstanceScore(boolean buggy, double loc, double defectDensity) {
             this.buggy = buggy;
             this.loc = loc;
-            this.probability = probability;
             this.defectDensity = defectDensity;
         }
 
-        public boolean isBuggy() { return buggy; }
-        public double getLoc() { return loc; }
-        public double getProbability() { return probability; }
-        public double getDefectDensity() { return defectDensity; }
+        boolean isBuggy() {
+            return buggy;
+        }
+
+        double getLoc() {
+            return loc;
+        }
+
+        double getDefectDensity() {
+            return defectDensity;
+        }
     }
 }

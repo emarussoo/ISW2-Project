@@ -1,0 +1,18 @@
+MILESTONE 1 - RISULTATI ESSENZIALI
+===================================
+Release analizzate: 14
+Classi distinte: 200
+Istanze classe-release: 1842
+Istanze buggy: 109
+Istanze non buggy: 1733
+Buggy rate complessivo: 5.92%
+
+STABILITA ESSENZIALE
+Classi: 55 nella prima release, 183 nell'ultima.
+Crescita complessiva: 128 classi (232.73%).
+Retention rate medio tra release consecutive: 98.93%.
+Retention rate minimo: 92.07%.
+Massimo incremento: +53 classi nella release 1.4.0.
+
+BUGGINESS
+Massimo buggy rate: 20.00% nella release 1.2.0.

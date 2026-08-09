@@ -1,0 +1,11 @@
+Indicator,Value
+Classi nella prima release,55
+Classi nell'ultima release,183
+Crescita complessiva (classi),128
+Crescita complessiva (%),232.72727272727272
+Retention rate medio (%),98.93469944689458
+Retention rate minimo (%),92.07317073170732
+Massimo incremento in una release,53
+Release del massimo incremento,1.4.0
+Massimo buggy rate (%),20.0
+Release con massimo buggy rate,1.2.0
