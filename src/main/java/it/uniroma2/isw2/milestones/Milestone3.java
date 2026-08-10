@@ -53,13 +53,27 @@ public class Milestone3 {
             Instances datasetC = new Instances(datasetA, 0);
             Instances datasetBPlus = new Instances(datasetA, 0);
 
-            // Popolamento dei dataset C e B+ in base al valore di NSmells
             for (int i = 0; i < datasetA.numInstances(); i++) {
-                Instance inst = datasetA.instance(i);
-                if (inst.value(nSmellsIndex) == 0.0) {
-                    datasetC.add(inst);
+                Instance instance = datasetA.instance(i);
+
+                if (instance.isMissing(nSmellsIndex)) {
+                    throw new IllegalStateException(
+                            "Valore NSmells mancante alla riga " + (i + 1)
+                    );
+                }
+
+                double numberOfSmells = instance.value(nSmellsIndex);
+
+                if (numberOfSmells < 0.0) {
+                    throw new IllegalStateException(
+                            "Valore NSmells negativo alla riga " + (i + 1)
+                    );
+                }
+
+                if (numberOfSmells == 0.0) {
+                    datasetC.add(instance);
                 } else {
-                    datasetBPlus.add(inst);
+                    datasetBPlus.add(instance);
                 }
             }
 
@@ -72,8 +86,11 @@ public class Milestone3 {
             // Esportazione dei dataset C, B+, B
             System.out.println("Esportazione dei dataset C, B+ e B nella cartella 'results/milestone3'...");
             File outDir = new File("results/milestone3");
-            if (!outDir.exists()) {
-                outDir.mkdirs();
+            if (!outDir.exists() && !outDir.mkdirs()) {
+                throw new IOException(
+                        "Impossibile creare la directory: "
+                                + outDir.getAbsolutePath()
+                );
             }
 
             weka.core.converters.CSVSaver saver = new weka.core.converters.CSVSaver();
@@ -103,9 +120,54 @@ public class Milestone3 {
             Instances cleanBPlus = Filter.useFilter(datasetBPlus, remove);
             Instances cleanB = Filter.useFilter(datasetB, remove);
 
+
+            //Reimposta class index
+            cleanA.setClassIndex(cleanA.numAttributes() - 1);
+            cleanBPlus.setClassIndex(cleanBPlus.numAttributes() - 1);
+            cleanB.setClassIndex(cleanB.numAttributes() - 1);
+            cleanC.setClassIndex(cleanC.numAttributes() - 1);
+
             System.out.println("Addestramento del modello oracolo (Random Forest + SMOTE) sull'intero Dataset A...");
+
+            final int modelSeed = 42;
+
+            // Individuazione esplicita delle classi.
+            int buggyClassIndex = cleanA.classAttribute().indexOfValue("Yes");
+            int cleanClassIndex = cleanA.classAttribute().indexOfValue("No");
+
+            if (buggyClassIndex < 0 || cleanClassIndex < 0) {
+                throw new IllegalStateException(
+                        "La classe Buggy deve contenere i valori 'Yes' e 'No'."
+                );
+            }
+
+            int buggyCount = countInstancesByClass(cleanA, buggyClassIndex);
+            int cleanCount = countInstancesByClass(cleanA, cleanClassIndex);
+
+            int minorityCount = Math.min(buggyCount, cleanCount);
+            int majorityCount = Math.max(buggyCount, cleanCount);
+
+            if (minorityCount < 2) {
+                throw new IllegalStateException(
+                        "SMOTE richiede almeno due istanze della classe minoritaria."
+                );
+            }
+
+            // Stessa Random Forest selezionata nella Milestone 2.
             RandomForest randomForest = new RandomForest();
+            randomForest.setNumIterations(100);
+            randomForest.setSeed(modelSeed);
+
+            // Stesso SMOTE dinamico utilizzato nella Milestone 2.
             SMOTE smote = new SMOTE();
+            smote.setRandomSeed(modelSeed);
+            smote.setNearestNeighbors(Math.min(5, minorityCount - 1));
+
+            double smotePercentage =
+                    ((majorityCount - minorityCount) * 100.0)
+                            / minorityCount;
+
+            smote.setPercentage(smotePercentage);
 
             FilteredClassifier bClassifierA = new FilteredClassifier();
             bClassifierA.setClassifier(randomForest);
@@ -133,11 +195,62 @@ public class Milestone3 {
             System.out.println(String.format(" %-7d %-7d %-7d %-7d    %-11d %-7d %-7d", actualA, expectedA, actualBPlus, expectedBPlus, expectedB, actualC, expectedC));
             System.out.println("---------------------------------------------------------------------");
 
-            // Calcolo aritmetico del delta tra B+ e B
-            int delta = expectedBPlus - expectedB;
+            // Passo 6: calcolo delle riduzioni What-If.
+
+            // Formulazione principale mostrata nelle slide:
+            // difetti reali nelle istanze con smell meno difetti attesi
+            // nello scenario in cui NSmells viene impostato a zero.
+            int estimatedAvoidedDefects = actualBPlus - expectedB;
+
+            // Effetto diretto della manipolazione sulle predizioni.
+            // B+ e B contengono le stesse istanze e differiscono
+            // esclusivamente per il valore di NSmells.
+            int predictedDrop = expectedBPlus - expectedB;
+
+            double dropAmongSmellyClasses =
+                    actualBPlus > 0
+                            ? estimatedAvoidedDefects * 100.0 / actualBPlus
+                            : 0.0;
+
+            double overallReduction =
+                    actualA > 0
+                            ? estimatedAvoidedDefects * 100.0 / actualA
+                            : 0.0;
+
+            double directPredictionReduction =
+                    expectedBPlus > 0
+                            ? predictedDrop * 100.0 / expectedBPlus
+                            : 0.0;
+
             System.out.println("\nAnalisi What-If conclusa.");
-            System.out.println("Se i programmatori avessero scritto codice perfetto (zero code smells),");
-            System.out.println("si sarebbero potuti evitare " + delta + " bug nei file che originariamente presentavano smell.");
+
+            System.out.printf(
+                    java.util.Locale.US,
+                    "Difetti potenzialmente evitabili, A(B+) - E(B): %d%n",
+                    estimatedAvoidedDefects
+            );
+
+            System.out.printf(
+                    java.util.Locale.US,
+                    "Riduzione rispetto ai difetti reali nelle istanze "
+                            + "con smell: %.2f%%%n",
+                    dropAmongSmellyClasses
+            );
+
+            System.out.printf(
+                    java.util.Locale.US,
+                    "Riduzione rispetto a tutti i difetti reali "
+                            + "del dataset A: %.2f%%%n",
+                    overallReduction
+            );
+
+            System.out.printf(
+                    java.util.Locale.US,
+                    "Variazione diretta delle predizioni, "
+                            + "E(B+) - E(B): %d, pari al %.2f%%%n",
+                    predictedDrop,
+                    directPredictionReduction
+            );
 
         } catch (IOException e) {
             System.err.println("Errore durante il caricamento del dataset: " + e.getMessage());
@@ -168,6 +281,23 @@ public class Milestone3 {
         }
         return count;
     }
+
+
+    private static int countInstancesByClass(
+            Instances data,
+            int classIndex) {
+
+        int count = 0;
+
+        for (Instance instance : data) {
+            if ((int) instance.classValue() == classIndex) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
 
     /**
      * Valuta le istanze di un dataset con il classificatore passato in input e conta le predizioni "Yes".
