@@ -7,7 +7,7 @@ import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.Ticket;
 import it.uniroma2.isw2.dataset.szz.BugLabeler;
 import it.uniroma2.isw2.dataset.szz.GitBugMapper;
-import it.uniroma2.isw2.dataset.szz.SzzCalculator;
+import it.uniroma2.isw2.dataset.szz.VersionLifecycleCalculator;
 import it.uniroma2.isw2.utils.CsvExporter;
 
 import java.util.List;
@@ -47,7 +47,7 @@ public class Milestone1 {
             List<Ticket> bugs = JiraFetcher.getBugs(projectName, allReleases);
             
             // b. Applichiamo SZZ per trovare IV, OV e FV
-            SzzCalculator.computeSzz(bugs, allReleases);
+            VersionLifecycleCalculator.assignLifecycleVersions(bugs, allReleases);
             
             // c. Troviamo i file Java modificati dai bug analizzando i commit di Git
             GitBugMapper.mapBugsToFiles(bugs, repoPath);

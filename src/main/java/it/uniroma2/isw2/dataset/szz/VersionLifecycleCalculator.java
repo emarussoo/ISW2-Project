@@ -7,13 +7,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-public class SzzCalculator {
+public class VersionLifecycleCalculator {
 
     /**
      * Calcola IV, OV e FV per tutti i ticket. Se IV non è determinabile da Jira (tramite Affected Versions),
      * usa il Proportion Total per stimarla.
      */
-    public static void computeSzz(List<Ticket> tickets, List<Release> releases) {
+    public static void assignLifecycleVersions(List<Ticket> tickets, List<Release> releases) {
         // 1. Assegna OV e FV a ciascun ticket in base alle date
         for (Ticket t : tickets) {
             t.setOpeningVersion(findRelease(t.getOpeningDate(), releases));
