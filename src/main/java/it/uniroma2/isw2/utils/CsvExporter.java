@@ -10,16 +10,11 @@ import java.util.List;
 
 public class CsvExporter {
 
-    /**
-     * Esporta la lista di ClassMetricsRow in un file CSV.
-     *
-     * @param dataset La lista dei dati estratti.
-     * @param outputPath Il percorso del file CSV da creare (es. "dataset.csv").
-     */
+
     public static void exportToCsv(List<ClassMetricsRow> dataset, String outputPath) {
         System.out.println("\nEsportazione del dataset in CSV in corso...");
         
-        // Definiamo le intestazioni delle colonne (le features)
+        // columns header (features)
         String[] headers = {
                 "Project", "Release", "File", "Normalized_File",
                 "Size_LOC", "NR", "NAuth", "NFix", "Age_in_Days", "Weighted_Age",
@@ -61,7 +56,7 @@ public class CsvExporter {
                         String.format(java.util.Locale.US, "%.4f", row.getAverageNd()),
                         String.format(java.util.Locale.US, "%.4f", row.getAverageEntropy()),
                         row.getnSmells(),
-                        row.isBuggy() ? "Yes" : "No" // Stampa "No" di default come richiesto
+                        row.isBuggy() ? "Yes" : "No"
                 );
             }
             System.out.println("Dataset esportato con successo in: " + outputPath);

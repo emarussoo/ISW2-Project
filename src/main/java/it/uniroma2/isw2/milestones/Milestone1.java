@@ -14,16 +14,17 @@ import java.util.List;
 
 public class Milestone1 {
 
+    // Executes the first milestone pipeline: fetching data from Jira, extracting metrics from Git, labeling, and exporting to CSV.
     public static void main(String[] args) {
         String projectName = "AVRO";
 
         try {
-            // 1. Fase Jira: Estrazione di tutte le release
+            // 1. Jira Phase: Extract all releases
             System.out.println("--- FASE 1: Estrazione Release da Jira ---");
             List<Release> allReleases = JiraFetcher.getReleases(projectName);
             System.out.println("Totale release trovate: " + allReleases.size());
 
-            // 2. Fase Filtro: Ignoriamo l'ultimo 66%
+            // 2. Filtering Phase: Ignore the last 66%
             System.out.println("\n--- FASE 2: Filtraggio Storico ---");
             List<Release> targetReleases = filterReleases(allReleases);
 
@@ -32,7 +33,7 @@ public class Milestone1 {
                 System.out.println("- " + r.getName() + " (Data: " + r.getReleaseDate().toLocalDate() + ")");
             }
 
-            // 3. Fase Git: Estrazione Metriche Base
+            // 3. Git Phase: Extract Base Metrics
             System.out.println("\n--- FASE 3: Estrazione Metriche da Git ---");
             String repoPath = "/Users/lele/Desktop/ISW2_project/avro/.git";
 
@@ -40,22 +41,22 @@ public class Milestone1 {
 
             System.out.println("\nFASE 3 COMPLETATA! Estratte " + partialDataset.size() + " righe di dataset totali.");
 
-            // 4. Fase Labeling: SZZ e Proportion Total
-            System.out.println("\n--- FASE 4: Labeling (SZZ e Proportion Total) ---");
-            
-            // a. Recuperiamo i Bug
+            // 4. Labeling Phase: Jira AV and Proportion Total
+            System.out.println("\n--- FASE 4: Labeling (Jira AV e Proportion Total) ---");
+
+            // a. Retrieve bugs
             List<Ticket> bugs = JiraFetcher.getBugs(projectName, allReleases);
-            
-            // b. Applichiamo SZZ per trovare IV, OV e FV
+
+            // b. Find IV, OV, and FV
             VersionLifecycleCalculator.assignLifecycleVersions(bugs, allReleases);
-            
-            // c. Troviamo i file Java modificati dai bug analizzando i commit di Git
+
+            // c. Find Java files modified by bugs by analyzing Git commits
             GitBugMapper.mapBugsToFiles(bugs, repoPath);
-            
-            // d. Etichettiamo il dataset
+
+            // d. Label the dataset
             BugLabeler.labelDataset(partialDataset, bugs, allReleases);
 
-            // Stampiamo un campione per vedere se funziona
+            // Prints a sample to verify correctness
             System.out.println("\nEsempio di una riga del dataset (Tutte le 20 Metriche):");
             if (!partialDataset.isEmpty()) {
                 ClassMetricsRow sample = partialDataset.get(0);
@@ -86,34 +87,31 @@ public class Milestone1 {
                 System.out.println("Target (Buggy): " + sample.isBuggy());
             }
 
-            // 5. Fase Esportazione CSV
+            // 5. CSV Export Phase
             String outputCsv = "results/milestone1/avro_metrics_dataset.csv";
             CsvExporter.exportToCsv(partialDataset, outputCsv);
-            System.out.println("\n✅ Dataset esportato con successo in: " + outputCsv);
+            System.out.println("\nDataset esportato con successo in: " + outputCsv);
 
-            } catch (Exception e) {
+        } catch (Exception e) {
             System.err.println("Errore fatale nell'estrazione: " + e.getMessage());
             e.printStackTrace();
-            }    }
+        }    }
 
-    /**
-     * Data una lista cronologica (dalla più vecchia alla più nuova),
-     * scarta il 66% finale e restituisce il restante 34%.
-     */
+    // Discards the final 66% of a chronological list of releases and returns the remaining 34%.
     private static List<Release> filterReleases(List<Release> allReleases) {
         if (allReleases == null || allReleases.isEmpty()) {
             return allReleases;
         }
 
-        // Calcoliamo quanti elementi tenere (circa 1/3)
-        int elementsToKeep = (int) Math.round(allReleases.size() * 0.34); // Scarta il 66%
+        // Calculates how many elements to keep (about 1/3, discarding 66%)
+        int elementsToKeep = (int) Math.round(allReleases.size() * 0.34);
 
-        // Nel caso limite in cui teniamo pochissime release, assicuriamoci di averne almeno una
+        // Ensures at least one release is kept in edge cases
         if (elementsToKeep == 0) {
             elementsToKeep = 1;
         }
 
-        // Restituisce una sotto-lista partendo dall'indice 0 fino al punto di taglio
+        // Returns a sub-list from index 0 to the cutoff point
         return allReleases.subList(0, elementsToKeep);
     }
 }

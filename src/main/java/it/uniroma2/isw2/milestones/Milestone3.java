@@ -14,9 +14,10 @@ import java.io.IOException;
 
 public class Milestone3 {
 
+    // Executes the third milestone pipeline: performs a What-If analysis by manipulating the 'NSmells' attribute and evaluating the impact.
     public static void main(String[] args) {
-        // Passo 1: Configurazione iniziale
-        // Percorso di default al dataset A ottenuto dalla Milestone 1
+        // Step 1: Initial configuration
+        // Default path to dataset A obtained from Milestone 1
         String datasetPath = "results/milestone1/avro_metrics_dataset.csv";
         if (args.length > 0) {
             datasetPath = args[0];
@@ -26,17 +27,17 @@ public class Milestone3 {
             System.out.println("--- Milestone 3: What-If Analysis ---");
             System.out.println("Caricamento dataset A da: " + datasetPath);
 
-            // Passo 2: Generazione dei Dataset
+            // Step 2: Dataset Generation
             CSVLoader loader = new CSVLoader();
             loader.setSource(new File(datasetPath));
             Instances datasetA = loader.getDataSet();
 
-            // Imposta la colonna "Buggy" come attributo classe (l'ultimo)
+            // Sets the "Buggy" column as the class attribute (the last one)
             if (datasetA.classIndex() == -1) {
                 datasetA.setClassIndex(datasetA.numAttributes() - 1);
             }
 
-            // Trova l'indice dell'attributo NSmells
+            // Finds the index of the NSmells attribute
             int nSmellsIndex = -1;
             for (int i = 0; i < datasetA.numAttributes(); i++) {
                 if (datasetA.attribute(i).name().equals("NSmells")) {
@@ -49,7 +50,7 @@ public class Milestone3 {
                 throw new IllegalStateException("Attributo 'NSmells' non trovato nel dataset!");
             }
 
-            // Inizializzazione dei dataset C, B+
+            // Initializes datasets C and B+
             Instances datasetC = new Instances(datasetA, 0);
             Instances datasetBPlus = new Instances(datasetA, 0);
 
@@ -77,13 +78,13 @@ public class Milestone3 {
                 }
             }
 
-            // Dataset B: deep copy di B+ con forzatura di NSmells a 0 per la simulazione What-If
+            // Dataset B: deep copy of B+ with NSmells forced to 0 for the What-If simulation
             Instances datasetB = new Instances(datasetBPlus);
             for (int i = 0; i < datasetB.numInstances(); i++) {
                 datasetB.instance(i).setValue(nSmellsIndex, 0.0);
             }
 
-            // Esportazione dei dataset C, B+, B
+            // Exports datasets C, B+, and B
             System.out.println("Esportazione dei dataset C, B+ e B nella cartella 'results/milestone3'...");
             File outDir = new File("results/milestone3");
             if (!outDir.exists() && !outDir.mkdirs()) {
@@ -94,7 +95,7 @@ public class Milestone3 {
             }
 
             weka.core.converters.CSVSaver saver = new weka.core.converters.CSVSaver();
-            
+
             saver.setInstances(datasetC);
             saver.setFile(new File(outDir, "dataset_C.csv"));
             saver.writeBatch();
@@ -107,21 +108,20 @@ public class Milestone3 {
             saver.setFile(new File(outDir, "dataset_B.csv"));
             saver.writeBatch();
 
-            // Passo 3: Addestramento del modello oracolo (BClassifierA)
+            // Step 3: Training the oracle model (BClassifierA)
             System.out.println("Rimozione delle prime quattro colonne testuali identificative (Project, Release, File, Normalized_File)...");
-            
+
             Remove remove = new Remove();
             remove.setAttributeIndices("1-4");
             remove.setInputFormat(datasetA);
 
-            // Applica il filtro Remove ai quattro dataset per evitare l'overfitting
+            // Applies the Remove filter to the four datasets to prevent overfitting
             Instances cleanA = Filter.useFilter(datasetA, remove);
             Instances cleanC = Filter.useFilter(datasetC, remove);
             Instances cleanBPlus = Filter.useFilter(datasetBPlus, remove);
             Instances cleanB = Filter.useFilter(datasetB, remove);
 
-
-            //Reimposta class index
+            // Resets the class index
             cleanA.setClassIndex(cleanA.numAttributes() - 1);
             cleanBPlus.setClassIndex(cleanBPlus.numAttributes() - 1);
             cleanB.setClassIndex(cleanB.numAttributes() - 1);
@@ -131,7 +131,7 @@ public class Milestone3 {
 
             final int modelSeed = 42;
 
-            // Individuazione esplicita delle classi.
+            // Explicitly identifies the classes
             int buggyClassIndex = cleanA.classAttribute().indexOfValue("Yes");
             int cleanClassIndex = cleanA.classAttribute().indexOfValue("No");
 
@@ -153,12 +153,12 @@ public class Milestone3 {
                 );
             }
 
-            // Stessa Random Forest selezionata nella Milestone 2.
+            // Same Random Forest selected in Milestone 2
             RandomForest randomForest = new RandomForest();
             randomForest.setNumIterations(100);
             randomForest.setSeed(modelSeed);
 
-            // Stesso SMOTE dinamico utilizzato nella Milestone 2.
+            // Same dynamic SMOTE used in Milestone 2
             SMOTE smote = new SMOTE();
             smote.setRandomSeed(modelSeed);
             smote.setNearestNeighbors(Math.min(5, minorityCount - 1));
@@ -173,10 +173,10 @@ public class Milestone3 {
             bClassifierA.setClassifier(randomForest);
             bClassifierA.setFilter(smote);
 
-            // Addestramento del modello vincente sul Dataset A storico
+            // Trains the winning model on the historical Dataset A
             bClassifierA.buildClassifier(cleanA);
 
-            // Passo 4: Predizione
+            // Step 4: Prediction
             System.out.println("Valutazione dei dataset e conteggio dei bug predetti...");
             int expectedA = countPredictedBugs(cleanA, bClassifierA);
             int expectedC = countPredictedBugs(cleanC, bClassifierA);
@@ -187,7 +187,7 @@ public class Milestone3 {
             int actualC = countActualBugs(datasetC);
             int actualBPlus = countActualBugs(datasetBPlus);
 
-            // Passo 5: Output dei risultati
+            // Step 5: Results Output
             System.out.println("\n" + String.format("  %-15s %-15s %-15s %-15s", "Dataset A", "Dataset B+", "Dataset B", "Dataset C"));
             System.out.println("---------------------------------------------------------------------");
             System.out.println(String.format("  %-7s %-7s %-7s %-7s     %-11s %-7s %-7s", "A", "E", "A", "E", "E", "A", "E"));
@@ -195,16 +195,12 @@ public class Milestone3 {
             System.out.println(String.format(" %-7d %-7d %-7d %-7d    %-11d %-7d %-7d", actualA, expectedA, actualBPlus, expectedBPlus, expectedB, actualC, expectedC));
             System.out.println("---------------------------------------------------------------------");
 
-            // Passo 6: calcolo delle riduzioni What-If.
+            // Step 6: What-If reduction calculations
 
-            // Formulazione principale mostrata nelle slide:
-            // difetti reali nelle istanze con smell meno difetti attesi
-            // nello scenario in cui NSmells viene impostato a zero.
+            // Main formulation: actual defects in instances with smells minus expected defects in the scenario where NSmells is set to zero
             int estimatedAvoidedDefects = actualBPlus - expectedB;
 
-            // Effetto diretto della manipolazione sulle predizioni.
-            // B+ e B contengono le stesse istanze e differiscono
-            // esclusivamente per il valore di NSmells.
+            // Direct effect of the manipulation on predictions (B+ and B differ exclusively by the NSmells value)
             int predictedDrop = expectedBPlus - expectedB;
 
             double dropAmongSmellyClasses =
@@ -260,16 +256,11 @@ public class Milestone3 {
         }
     }
 
-    /**
-     * Conta il numero di istanze effettivamente etichettate come "Yes" in un dataset.
-     *
-     * @param data Dataset da valutare.
-     * @return Numero di bug reali.
-     */
+    // Counts the number of instances actually labeled as "Yes" (buggy) in the dataset.
     private static int countActualBugs(Instances data) {
         int count = 0;
         int yesIndex = data.classAttribute().indexOfValue("Yes");
-        
+
         if (yesIndex == -1) {
             throw new IllegalStateException("Valore classe 'Yes' non trovato nell'attributo classe 'Buggy'.");
         }
@@ -282,7 +273,7 @@ public class Milestone3 {
         return count;
     }
 
-
+    // Counts and returns the number of instances matching the specified class index.
     private static int countInstancesByClass(
             Instances data,
             int classIndex) {
@@ -298,19 +289,11 @@ public class Milestone3 {
         return count;
     }
 
-
-    /**
-     * Valuta le istanze di un dataset con il classificatore passato in input e conta le predizioni "Yes".
-     *
-     * @param data Dataset da valutare.
-     * @param clf  Classificatore oracolo addestrato.
-     * @return Numero di istanze etichettate come difettose (buggy = Yes).
-     * @throws Exception Se la classificazione fallisce.
-     */
+    // Evaluates the dataset using the provided classifier and counts the number of predicted bugs ("Yes").
     private static int countPredictedBugs(Instances data, FilteredClassifier clf) throws Exception {
         int count = 0;
         int yesIndex = data.classAttribute().indexOfValue("Yes");
-        
+
         if (yesIndex == -1) {
             throw new IllegalStateException("Valore classe 'Yes' non trovato nell'attributo classe 'Buggy'. Assicurati che il dataset abbia i valori corretti.");
         }

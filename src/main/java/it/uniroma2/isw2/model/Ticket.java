@@ -5,18 +5,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Ticket {
-    private String id; // Es. "AVRO-123"
+    private String id;
 
     private LocalDateTime openingDate;
     private LocalDateTime resolutionDate;
 
-    // Versioni per SZZ e Proportion
+    // lifecycle
     private Release injectedVersion; // IV
     private Release openingVersion;  // OV
     private Release fixedVersion;    // FV
     private List<Release> affectedVersions; // AV (quelle riportate da Jira)
 
-    // Lista dei file modificati nel commit che ha risolto questo ticket
+    //list of modified files in commit that resolved this ticket
     private List<String> affectedFiles;
 
     public Ticket(String id, LocalDateTime openingDate, LocalDateTime resolutionDate) {
@@ -31,7 +31,7 @@ public class Ticket {
         this.affectedFiles.add(fileName);
     }
 
-    // --- GETTER E SETTER ---
+    // getters and setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public LocalDateTime getOpeningDate() { return openingDate; }

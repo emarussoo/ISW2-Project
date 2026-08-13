@@ -33,29 +33,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * Classe responsabile dell'estrazione delle metriche del codice sorgente
- * analizzando la storia dei commit in un repository Git locale utilizzando JGit.
- */
+// Extracts code and bug metrics for all Java files across the specified releases.
 public class GitMetricsExtractor {
 
-    /**
-     * Estrae le metriche per tutti i file Java nelle release specificate.
-     * Effettua il checkout del repository per ogni release e analizza la storia
-     * di ciascun file `.java` trovato.
-     *
-     * @param targetReleases La lista delle release da analizzare.
-     * @param repoPath Il percorso assoluto della cartella `.git` del repository.
-     * @return Una lista di ClassMetricsRow contenente i dati estratti.
-     * @throws Exception Se si verificano errori durante l'accesso al repository o al file system.
-     */
+    // Checks out each release and processes all Java files to compute their metrics.
     public static List<ClassMetricsRow> extractMetrics(List<Release> targetReleases, String repoPath) throws Exception {
         List<ClassMetricsRow> dataset = new ArrayList<>();
         String projectDir = repoPath.replace("/.git", "");
 
-        // Assicurati che questo percorso corrisponda a dove hai estratto PMD nel tuo progetto
         String pmdBinPath = "/Users/lele/IdeaProjects/ISW2-Project/pmd/bin/pmd";
-        // Scegliamo un ruleset classico per la code quality e design
+        // Uses classic rulesets for code quality and design
         String rulesets = "category/java/design.xml,category/java/errorprone.xml,category/java/bestpractices.xml";
 
         FileRepositoryBuilder builder = new FileRepositoryBuilder();
@@ -75,7 +62,7 @@ public class GitMetricsExtractor {
                 List<Path> javaFiles = findJavaFiles(projectDir);
                 System.out.println("Elaborazione di " + javaFiles.size() + " file (Questa operazione può richiedere alcuni minuti)...");
 
-                // Eseguiamo PMD sull'intero progetto allo stato di questa release
+                // Runs PMD on the entire project at the current release state
                 System.out.println("Esecuzione PMD in corso per la ricerca dei Code Smells...");
                 Map<String, Integer> smellsMap = PmdAnalyzer.extractSmells(projectDir, pmdBinPath, rulesets);
 
@@ -87,8 +74,8 @@ public class GitMetricsExtractor {
                     ClassMetricsRow row = new ClassMetricsRow("AVRO", release.getName(), className, normalizedClassName);
 
                     row.setSizeLoc((int) countLinesOfCode(filePath));
-                    
-                    // Impostiamo il numero di smells trovato da PMD per questo file
+
+                    // Sets the number of smells found by PMD for this file
                     row.setnSmells(smellsMap.getOrDefault(className, 0));
 
                     computeHistoricalMetrics(repository, git, filePath, projectDir, row);
@@ -104,16 +91,7 @@ public class GitMetricsExtractor {
         return dataset;
     }
 
-    /**
-     * Calcola le metriche evolutive di un singolo file analizzando la sua intera storia
-     * ("From release 0") tramite git log.
-     *
-     * @param repository L'oggetto Repository di JGit.
-     * @param git L'oggetto Git per eseguire i comandi.
-     * @param filePath Il path del file da analizzare.
-     * @param projectDir Il path della root del progetto.
-     * @param row L'oggetto ClassMetricsRow in cui salvare le metriche estratte.
-     */
+    // Computes evolutionary and historical metrics for a specific file using git log.
     private static void computeHistoricalMetrics(Repository repository, Git git, Path filePath, String projectDir, ClassMetricsRow row) {
         String relativePath = filePath.toString().substring(projectDir.length() + 1).replace("\\", "/");
 
@@ -179,7 +157,7 @@ public class GitMetricsExtractor {
 
                     totalLocAdded += commitMetrics.myLocAdded;
                     if (commitMetrics.myLocAdded > maxLocAdded) maxLocAdded = commitMetrics.myLocAdded;
-                    
+
                     totalLocDeleted += commitMetrics.myLocDeleted;
                     if (commitMetrics.myLocDeleted > maxLocDeleted) maxLocDeleted = commitMetrics.myLocDeleted;
 
@@ -192,36 +170,22 @@ public class GitMetricsExtractor {
 
             long ageInDays = computeAgeInDays(firstCommit, lastCommit);
 
-            populateRow(row, nr, authors.size(), nFix, ageInDays, totalLocAdded, maxLocAdded, 
-                        totalLocDeleted, maxLocDeleted, totalChurn, maxChurn, totalChangeSet, 
-                        maxChangeSet, totalNd, totalEntropy);
+            populateRow(row, nr, authors.size(), nFix, ageInDays, totalLocAdded, maxLocAdded,
+                    totalLocDeleted, maxLocDeleted, totalChurn, maxChurn, totalChangeSet,
+                    maxChangeSet, totalNd, totalEntropy);
 
         } catch (Exception e) {
             System.err.println("Errore nell'estrazione storica per: " + relativePath);
         }
     }
 
-    /**
-     * Verifica se un commit è un fix analizzando il suo messaggio.
-     * Cerca parole chiave come "fix", "bug" o l'identificativo del progetto "avro-".
-     *
-     * @param commit Il commit da analizzare.
-     * @return true se il messaggio suggerisce che si tratta di un bug fix.
-     */
+    // Determines if a commit is a bug fix based on keywords in its message.
     private static boolean isBugFix(RevCommit commit) {
         String msg = commit.getFullMessage().toLowerCase();
         return msg.contains("fix") || msg.contains("bug") || msg.contains("avro-");
     }
 
-    /**
-     * Calcola le differenze (DiffEntry) introdotte da un commit rispetto al suo parent.
-     *
-     * @param repository Il repository.
-     * @param df Il formatter per le differenze.
-     * @param commit Il commit di cui calcolare le differenze.
-     * @return La lista dei file modificati e le relative differenze.
-     * @throws Exception Se si verificano errori di lettura.
-     */
+    // Calculates the file differences introduced by a commit compared to its parent.
     private static List<DiffEntry> getCommitDiffs(Repository repository, DiffFormatter df, RevCommit commit) throws Exception {
         if (commit.getParentCount() > 0) {
             RevCommit parent = commit.getParent(0);
@@ -235,13 +199,7 @@ public class GitMetricsExtractor {
         }
     }
 
-    /**
-     * Calcola la metrica ND (Number of Directories).
-     * Determina quante directory uniche sono state toccate dai file di un commit.
-     *
-     * @param diffs La lista delle differenze del commit.
-     * @return Il numero di directory modificate.
-     */
+    // Calculates the Number of Directories (ND) modified in a commit.
     private static int computeNd(List<DiffEntry> diffs) {
         Set<String> directories = new HashSet<>();
         for (DiffEntry d : diffs) {
@@ -256,16 +214,7 @@ public class GitMetricsExtractor {
         return directories.size();
     }
 
-    /**
-     * Analizza in dettaglio le differenze per calcolare le LOC aggiunte/eliminate,
-     * l'entropia del commit e le metriche specifiche del file target.
-     *
-     * @param df Il formatter JGit.
-     * @param diffs La lista dei file modificati.
-     * @param relativePath Il percorso del file attualmente in esame (target).
-     * @return Un oggetto CommitMetrics contenente le metriche estratte.
-     * @throws Exception In caso di errore durante la lettura degli edit.
-     */
+    // Analyzes commit differences to compute LOC added/deleted and commit entropy.
     private static CommitMetrics processCommitDiffs(DiffFormatter df, List<DiffEntry> diffs, String relativePath) throws Exception {
         CommitMetrics metrics = new CommitMetrics();
         int totalLocModifiedInCommit = 0;
@@ -280,7 +229,7 @@ public class GitMetricsExtractor {
                 locAddedInFile += edit.getLengthB();
                 locDeletedInFile += edit.getLengthA();
             }
-            
+
             int locModifiedInFile = locAddedInFile + locDeletedInFile;
             totalLocModifiedInCommit += locModifiedInFile;
             locModifiedPerFile.add(locModifiedInFile);
@@ -302,9 +251,7 @@ public class GitMetricsExtractor {
         return metrics;
     }
 
-    /**
-     * Calcola l'età in giorni di un file basandosi sul suo primo e ultimo commit.
-     */
+    // Calculates the age of a file in days between its first and last commit.
     private static long computeAgeInDays(RevCommit firstCommit, RevCommit lastCommit) {
         if (firstCommit != null && lastCommit != null) {
             Instant firstTime = Instant.ofEpochSecond(firstCommit.getCommitTime());
@@ -314,12 +261,10 @@ public class GitMetricsExtractor {
         return 0;
     }
 
-    /**
-     * Salva i totali, massimi e le medie delle metriche nell'oggetto riga finale.
-     */
-    private static void populateRow(ClassMetricsRow row, int nr, int numAuthors, int nFix, long ageInDays, 
-                                    int totalLocAdded, int maxLocAdded, int totalLocDeleted, int maxLocDeleted, 
-                                    int totalChurn, int maxChurn, int totalChangeSet, int maxChangeSet, 
+    // Populates the metrics row with totals, maximums, and calculated averages.
+    private static void populateRow(ClassMetricsRow row, int nr, int numAuthors, int nFix, long ageInDays,
+                                    int totalLocAdded, int maxLocAdded, int totalLocDeleted, int maxLocDeleted,
+                                    int totalChurn, int maxChurn, int totalChangeSet, int maxChangeSet,
                                     int totalNd, double totalEntropy) {
         row.setNumberOfRevisions(nr);
         row.setNumberOfAuthors(numAuthors);
@@ -330,7 +275,7 @@ public class GitMetricsExtractor {
         row.setLocAdded(totalLocAdded);
         row.setMaxLocAdded(maxLocAdded);
         row.setAverageLocAdded(nr > 0 ? totalLocAdded / nr : 0);
-        
+
         row.setLocDeleted(totalLocDeleted);
         row.setMaxLocDeleted(maxLocDeleted);
         row.setAverageLocDeleted(nr > 0 ? totalLocDeleted / nr : 0);
@@ -342,14 +287,12 @@ public class GitMetricsExtractor {
         row.setChangeSetSize(totalChangeSet);
         row.setMaxChangeSet(maxChangeSet);
         row.setAverageChangeSet(nr > 0 ? totalChangeSet / nr : 0);
-        
+
         row.setAverageNd(nr > 0 ? (double) totalNd / nr : 0.0);
         row.setAverageEntropy(nr > 0 ? totalEntropy / nr : 0.0);
     }
 
-    /**
-     * Trova il tag Git che corrisponde al nome della release.
-     */
+    // Finds and returns the Git tag corresponding to the given release name.
     private static Ref findMatchingTag(List<Ref> tags, String releaseName) {
         for (Ref tag : tags) {
             if (tag.getName().contains(releaseName)) return tag;
@@ -357,42 +300,33 @@ public class GitMetricsExtractor {
         return null;
     }
 
-    /**
-     * Ricerca ricorsivamente tutti i file .java a partire da una directory.
-     */
+    // Recursively finds all Java files starting from the given directory path.
     private static List<Path> findJavaFiles(String startPath) throws Exception {
         try (Stream<Path> stream = Files.walk(Paths.get(startPath))) {
             return stream.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList());
         }
     }
 
-    /**
-     * Conta le righe di codice (non vuote) di un file. Questa rappresenta la metrica statica 'Size'.
-     */
+    // Counts the non-empty lines of code (Size) for a given file.
     private static long countLinesOfCode(Path filePath) {
         try (Stream<String> lines = Files.lines(filePath)) {
             return lines.filter(line -> !line.trim().isEmpty()).count();
         } catch (Exception e) { return 0; }
     }
 
-    /**
-     * Pulisce il percorso del file estraendo solo il Fully Qualified Name della classe (es. org/apache/avro/...).
-     * Rimuove prefissi dipendenti dalla release come 'src/java/', 'lang/java/', ecc.
-     */
+    // Extracts the normalized class name by removing release-specific prefixes.
     private static String extractNormalizedClassName(String filePath) {
-        // AVRO usa tipicamente "org/apache/avro" come root del namespace per il codice Java
+        // AVRO typically uses "org/apache/avro" as the namespace root for Java code
         String namespaceRoot = "org/apache/avro/";
         int index = filePath.indexOf(namespaceRoot);
         if (index != -1) {
             return filePath.substring(index);
         }
-        // Se non troviamo la radice org/apache/avro, restituiamo il nome originale per sicurezza
+        // If the root is not found, return the original name as fallback
         return filePath;
     }
 
-    /**
-     * Classe di supporto interna (DTO) per raggruppare i valori estratti da processCommitDiffs.
-     */
+    // Helper DTO class to store metrics extracted from commit differences.
     private static class CommitMetrics {
         int myLocAdded = 0;
         int myLocDeleted = 0;

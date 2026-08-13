@@ -1,13 +1,13 @@
 package it.uniroma2.isw2.model;
 
 public class ClassMetricsRow {
-    // Identificativi
+    // Identifiers
     private String projectName;
     private String releaseId;
     private String className; // Contiene il path originale intero
     private String normalizedClassName; // FQN o namespace pulito (es. org/apache/avro/...)
 
-    // Metriche (Feature per il Machine Learning)
+    // Metrics
     private int sizeLoc;
     private int numberOfRevisions;
     private int numberOfAuthors;
@@ -34,10 +34,9 @@ public class ClassMetricsRow {
     private double averageNd;
     private double averageEntropy;
 
-    // Metriche Strutturali (Code Smells)
     private int nSmells;
 
-    // Target Label (Il risultato di SZZ/Proportion)
+    // Target Label
     private boolean buggy;
 
     public ClassMetricsRow(String projectName, String releaseId, String className, String normalizedClassName) {
@@ -49,8 +48,7 @@ public class ClassMetricsRow {
         this.buggy = false; // Di default assumiamo che la classe sia sana
     }
 
-    // Per generare i Getter e Setter su Mac, usa la scorciatoia: Cmd + N -> Getter and Setter -> seleziona tutti i campi
-
+    // getters and setters
 
     public String getProjectName() {
         return projectName;

@@ -9,35 +9,31 @@ import java.util.List;
 
 public class VersionLifecycleCalculator {
 
-    /**
-     * Calcola IV, OV e FV per tutti i ticket. Se IV non è determinabile da Jira (tramite Affected Versions),
-     * usa il Proportion Total per stimarla.
-     */
+    // Calculates IV, OV, and FV for all tickets, estimating IV using the Proportion method if missing from Jira.
     public static void assignLifecycleVersions(List<Ticket> tickets, List<Release> releases) {
-        // 1. Assegna OV e FV a ciascun ticket in base alle date
+        // Assigns OV and FV to each ticket based on dates
         for (Ticket t : tickets) {
             t.setOpeningVersion(findRelease(t.getOpeningDate(), releases));
             t.setFixedVersion(findRelease(t.getResolutionDate(), releases));
-            
-            // Determina IV dalle Affected Versions (se presenti)
+
+            // Determines IV from Affected Versions if available
             if (!t.getAffectedVersions().isEmpty()) {
-                // Ordina in modo da prendere la più vecchia
+                // Sorts to select the oldest version
                 t.getAffectedVersions().sort(Comparator.comparing(Release::getReleaseDate));
                 Release oldestAv = t.getAffectedVersions().get(0);
-                
-                // Un check di validità: IV non dovrebbe essere successiva a OV (a volte accade per errori in Jira)
-                // Se è successiva, la scartiamo per non sfalsare SZZ.
+
+                // Validates that IV is not strictly after OV to prevent anomalies
                 if (oldestAv.getReleaseDate().isBefore(t.getOpeningDate()) || oldestAv.getReleaseDate().isEqual(t.getOpeningDate())) {
                     t.setInjectedVersion(oldestAv);
                 }
             }
         }
-        
-        // 2. Calcola Proportion Total
+
+        // Computes Proportion Total
         double pTotal = calculateProportionTotal(tickets, releases);
         System.out.println("Proportion Total (P) calcolato: " + pTotal);
-        
-        // 3. Stima le IV mancanti tramite Proportion
+
+        // Estimates missing IVs using Proportion
         for (Ticket t : tickets) {
             if (t.getInjectedVersion() == null) {
                 Release iv = estimateInjectedVersion(t, pTotal, releases);
@@ -45,10 +41,9 @@ public class VersionLifecycleCalculator {
             }
         }
     }
-    
+
+    // Finds the first release following the given date, or the last release if none match.
     private static Release findRelease(java.time.LocalDateTime date, List<Release> releases) {
-        // Trova la prima release successiva alla data fornita.
-        // Se non ce n'è nessuna, potremmo restituire l'ultima release.
         for (Release r : releases) {
             if (r.getReleaseDate().isAfter(date) || r.getReleaseDate().isEqual(date)) {
                 return r;
@@ -56,22 +51,23 @@ public class VersionLifecycleCalculator {
         }
         return releases.get(releases.size() - 1);
     }
-    
+
+    // Calculates the average Proportion (P) across all tickets with valid versions.
     private static double calculateProportionTotal(List<Ticket> tickets, List<Release> releases) {
         List<Double> proportions = new ArrayList<>();
-        
+
         for (Ticket t : tickets) {
             if (t.getInjectedVersion() != null && t.getOpeningVersion() != null && t.getFixedVersion() != null) {
                 int fvIndex = releases.indexOf(t.getFixedVersion());
                 int ovIndex = releases.indexOf(t.getOpeningVersion());
                 int ivIndex = releases.indexOf(t.getInjectedVersion());
-                
-                // Previene calcoli se le versioni sono invertite (errore di Jira o FV < IV)
+
+                // Prevents calculations if versions are inverted or invalid
                 if (fvIndex > ivIndex && fvIndex >= ovIndex && ovIndex >= ivIndex) {
                     double p;
                     if (fvIndex == ovIndex) {
-                        // Se FV == OV, consideriamo P come se fv-ov fosse = 1 per evitare divisioni per zero
-                        p = (double) (fvIndex - ivIndex) / 1.0; 
+                        // Assumes an offset of 1 if FV equals OV to avoid division by zero
+                        p = (double) (fvIndex - ivIndex) / 1.0;
                     } else {
                         p = (double) (fvIndex - ivIndex) / (fvIndex - ovIndex);
                     }
@@ -79,36 +75,37 @@ public class VersionLifecycleCalculator {
                 }
             }
         }
-        
-        // Calcola la media di P
-        if (proportions.isEmpty()) return 1.0; // Valore di fallback (es. fallback a OV)
-        
+
+        // Calculates the average of P
+        if (proportions.isEmpty()) return 1.0; // Fallback value
+
         double sum = 0;
         for (double p : proportions) {
             sum += p;
         }
         return sum / proportions.size();
     }
-    
+
+    // Estimates the Injected Version (IV) using the Proportion formula.
     private static Release estimateInjectedVersion(Ticket t, double pTotal, List<Release> releases) {
         int fvIndex = releases.indexOf(t.getFixedVersion());
         int ovIndex = releases.indexOf(t.getOpeningVersion());
-        
+
         if (fvIndex == -1 || ovIndex == -1) {
-             return t.getOpeningVersion(); // Fallback
+            return t.getOpeningVersion(); // Fallback
         }
-        
-        // Formula per Proportion: IV = FV - (FV - OV) * P
+
+        // Proportion formula: IV = FV - (FV - OV) * P
         double fvMinusOv = fvIndex - ovIndex;
-        // Se OV e FV coincidono nello stesso index, fvMinusOv = 0. Assumiamo 1 come offset minimo di SZZ.
+        // Assumes a minimum offset of 1 if OV and FV coincide
         if (fvMinusOv == 0) fvMinusOv = 1.0;
-        
+
         int ivIndex = (int) Math.round(fvIndex - (fvMinusOv * pTotal));
-        
-        // Limita l'indice tra 0 e fvIndex (perché IV deve esistere prima di FV)
+
+        // Constrains the index between 0 and fvIndex
         if (ivIndex < 0) ivIndex = 0;
         if (ivIndex > fvIndex) ivIndex = fvIndex;
-        
+
         return releases.get(ivIndex);
     }
 }
