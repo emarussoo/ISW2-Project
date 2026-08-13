@@ -40,6 +40,7 @@ public class WekaEvaluator {
     private static final int IBK_NEIGHBORS = 3;
     private static final int DEFAULT_SMOTE_NEIGHBORS = 5;
 
+    // Runs the defect prediction experiment by loading data, preprocessing it, and testing all configurations.
     public void runExperiment(String datasetPath, String outputPath) throws Exception {
         // 1. Load data.
         CSVLoader loader = new CSVLoader();
@@ -86,6 +87,7 @@ public class WekaEvaluator {
         }
     }
 
+    // Executes a 10x10-fold cross-validation and writes the evaluation metrics to the output writer.
     private void execute10x10Fold(
             Instances data,
             String clfName,
@@ -184,6 +186,7 @@ public class WekaEvaluator {
         }
     }
 
+    // Configures and adds the specified data balancing filter to the filter list.
     private void addBalancingFilter(
             List<Filter> filters,
             String balName,
@@ -248,6 +251,7 @@ public class WekaEvaluator {
         }
     }
 
+    // Retrieves the index of the specified class value, ensuring it exists within the dataset.
     private int requireClassValue(Instances data, String value) {
         int index = data.classAttribute().indexOfValue(value);
         if (index < 0) {
@@ -257,6 +261,7 @@ public class WekaEvaluator {
         return index;
     }
 
+    // Counts and returns the number of instances matching the given class value index.
     private int getInstancesCountByClass(Instances train, int classValue) {
         int count = 0;
         for (Instance instance : train) {
@@ -267,6 +272,7 @@ public class WekaEvaluator {
         return count;
     }
 
+    // Instantiates and configures the specified base classifier.
     private Classifier getBaseClassifier(String clfName, int experimentSeed) {
         switch (clfName) {
             case "RandomForest":
@@ -289,6 +295,7 @@ public class WekaEvaluator {
         }
     }
 
+    // Computes the bugs found when inspecting 20% of the total Lines of Code (NPofB20).
     private double calculateNPofB20(
             Classifier classifier,
             Instances test,
@@ -356,25 +363,30 @@ public class WekaEvaluator {
         return bugsFound / totalBugs;
     }
 
+    // Helper class to store and rank instances based on defect density.
     private static class InstanceScore {
         private final boolean buggy;
         private final double loc;
         private final double defectDensity;
 
+        // Constructs an InstanceScore object.
         InstanceScore(boolean buggy, double loc, double defectDensity) {
             this.buggy = buggy;
             this.loc = loc;
             this.defectDensity = defectDensity;
         }
 
+        // Returns whether the instance is buggy.
         boolean isBuggy() {
             return buggy;
         }
 
+        // Returns the lines of code (LOC) of the instance.
         double getLoc() {
             return loc;
         }
 
+        // Returns the defect density of the instance.
         double getDefectDensity() {
             return defectDensity;
         }
