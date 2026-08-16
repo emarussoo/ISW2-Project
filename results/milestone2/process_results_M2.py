@@ -25,7 +25,6 @@ def process_results():
         print(f"Errore: il file {input_file} non esiste.")
         return
 
-    # Controllo delle colonne prodotte dal nuovo WekaEvaluator.
     required_columns = [
         "Dataset",
         "Classifier",
@@ -54,8 +53,7 @@ def process_results():
         )
         return
 
-    # Pandas interpreta la stringa "None" come valore mancante.
-    # Viene quindi ripristinato il nome della configurazione.
+
     df["Balancing"] = df["Balancing"].fillna("None")
     df["FeatureSelection"] = (
         df["FeatureSelection"].fillna("None")
@@ -77,8 +75,7 @@ def process_results():
         "NPofB20"
     ]
 
-   # Ogni valore finale è la media delle 100 valutazioni:
-   # 10 ripetizioni x 10 fold.
+
     summary_df = (
        df.groupby(group_cols, dropna=False)[metric_cols]
        .mean()
@@ -101,9 +98,7 @@ def process_results():
         inplace=True
     )
 
-    # Sensitivity, TP Rate e Recall sono la stessa misura.
-    # Le colonne vengono comunque mantenute per rispettare
-    # il formato richiesto.
+
     summary_df["sensitivity"] = summary_df["recall"]
     summary_df["TP_Rate"] = summary_df["recall"]
 
@@ -139,7 +134,7 @@ def process_results():
 
     summary_df = summary_df[final_columns]
 
-    # Controlli sulla completezza dell'esperimento.
+
     expected_configurations = 24
     expected_evaluations_per_configuration = 100
     expected_raw_rows = (
