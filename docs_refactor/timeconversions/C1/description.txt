@@ -1,0 +1,8 @@
+This refactor aims to generate a class variant c1 of Timeconversions.java removing this smell:
+
+
+Line,Severity,Rule,Message
+33,MAJOR,java:S1118,"Add a private constructor to hide the implicit public one."
+
+
+No test suite attached

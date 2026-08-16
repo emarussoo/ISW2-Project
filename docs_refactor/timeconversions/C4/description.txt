@@ -1,0 +1,12 @@
+This refactor aims to generate a class variant c2 of Timeconversions.java removing this smell:
+
+
+Line,Severity,Rule,Message
+33,MAJOR,java:S1118,"Add a private constructor to hide the implicit public one."
+
+
+This refactor aims also to correct the bug in the class.
+The difference between C3 is that here is specified to not to ignore the tests marked as @Ignore
+
+Test suite attached:
+ISW2TimeConversionsBBCFTest.java containing aggregated ISW2TimeConversionsBBTest.java ISW2TimeConversionsCFTest.java tests

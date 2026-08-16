@@ -1,0 +1,29 @@
+You are an expert Java developer.
+
+I want to improve the maintainability of the attached C0 class: TimeConversions.java.
+
+Create C2 without changing C0 functionality and by removing or reducing the code smells reported in the attached diagnostic file: last_class_smells.csv.
+Code smells must be removed or reduced only when doing so does not change the observable behavior, does not break compilation, does not alter the public API, and does not make any existing or provided test fail. If removing a smell would require changing the public API, changing constructor visibility, removing supported behavior, or invalidating existing tests, then the smell must be preserved and the original behavior must take precedence.
+
+For this C2 variant, the black-box test suite ISW2TimeConversionsBBTest.java is provided. The refactored class must pass this test suite, ignoring the tests marked with @Ignore.
+
+Make sure that C2 satisfies the following constraints:
+
+1. Preserve the original package name.
+2. Preserve the Apache license header.
+3. Preserve the public API of C0, including public class names, nested class names, method signatures, return types, constructors, and visibility modifiers.
+4. The generated variant will be referred to as C2 in the experiment, but the Java public class name must remain TimeConversions.
+5. Do not introduce new external dependencies.
+6. Do not remove existing functionality.
+7. Do not add unrelated functionality.
+8. Do not add test code.
+9. The output must be a complete Java source file that can replace the original TimeConversions.java file.
+10. The refactored code must compile in the Apache Avro project.
+11. The refactored code must pass the provided ISW2TimeConversionsBBTest.java test suite, excluding tests annotated with @Ignore.
+
+Do not include in C2 changes different from what I asked. In fact, consider that C2 should replace C0 and work with the other components of the system as C0 currently does.
+
+Do not explain the changes.
+Return only the complete refactored Java code as a downloadable file.
+
+This is an important request; take all the time you need to provide a complete and accurate answer to this request.

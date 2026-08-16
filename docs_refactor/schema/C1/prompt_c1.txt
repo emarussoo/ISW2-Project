@@ -1,0 +1,37 @@
+You are an expert Java developer.
+
+I want to improve the maintainability of the attached C0 class:
+Schema.java from Apache Avro.
+
+Create C1 without changing C0 functionality and by removing or reducing the
+code smells reported in the attached SonarCloud diagnostic file:
+first_class_smells.csv.
+
+For this C1 variant, no test suite is provided. Therefore, preserve the
+behavior of C0 based only on the source code and the existing API.
+
+Code smells must be removed or reduced only when doing so does not change the
+observable behavior, break compilation, alter the existing API, remove
+supported functionality, or introduce compatibility problems. If a smell
+cannot be removed safely, preserve the original implementation.
+
+The generated variant is called C1 only in the experiment. The Java public
+class name and the output filename must remain Schema.java.
+
+Do not include in C1 changes different from what I asked. Consider that C1
+must replace C0 and work with the other components of the system exactly as C0
+currently does.
+
+Do not introduce new dependencies, modify other files, add test code, remove
+deprecated APIs, or fix possible defects unrelated to the reported code
+smells.
+
+Return a complete Schema.java file that can directly replace C0 and compile in
+the existing Apache Avro project.
+
+Do not explain the changes.
+
+Return only the complete refactored Java source code as a downloadable file.
+
+This is an important request. Take all the time needed to provide a complete
+and accurate answer.

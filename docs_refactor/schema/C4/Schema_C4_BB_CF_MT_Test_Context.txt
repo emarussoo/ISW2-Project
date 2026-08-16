@@ -1,0 +1,1958 @@
+TEST CONTEXT FOR SCHEMA.JAVA VARIANT C3
+
+This text file contains the complete test suites developed from C0 that the
+refactored Schema.java variant must continue to pass.
+
+Included suites:
+1. ISW2SchemaBBTest.java
+2. ISW2SchemaCFTest.java
+
+The two suites are kept as separate Java compilation units inside this context
+file. Do not merge, rename, or modify the test classes. Use them only as
+behavioral constraints while refactoring Schema.java.
+
+
+================================================================================
+BEGIN FILE: ISW2SchemaBBTest.java
+================================================================================
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information.
+ */
+package org.apache.avro;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
+import org.junit.Test;
+import org.junit.experimental.runners.Enclosed;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
+
+/**
+ * Black-box tests for Schema, derived from Category Partition, Base Choice and
+ * Boundary Value Analysis.
+ */
+@RunWith(Enclosed.class)
+public class ISW2SchemaBBTest {
+
+  private static Schema primitive(Schema.Type type) {
+    return Schema.create(type);
+  }
+
+  private static Schema emptyRecord(String name, String namespace) {
+    return Schema.createRecord(name, null, namespace, false, Collections.emptyList());
+  }
+
+  private static Schema recordWithStringFields(String name, String namespace, String... fieldNames) {
+    List<Schema.Field> fields = new ArrayList<>();
+    for (String fieldName : fieldNames) {
+      fields.add(new Schema.Field(fieldName, primitive(Schema.Type.STRING)));
+    }
+    return Schema.createRecord(name, null, namespace, false, fields);
+  }
+
+  private static Schema recursiveNode() {
+    Schema node = Schema.createRecord("Node", null, "org.example", false);
+    Schema next = Schema.createUnion(primitive(Schema.Type.NULL), node);
+    Schema.Field nextField = new Schema.Field("next", next, null, Schema.Field.NULL_DEFAULT_VALUE);
+    node.setFields(Collections.singletonList(nextField));
+    return node;
+  }
+
+  private static int maximumSupportedFixedSize() {
+    int low = 0;
+    int high = Integer.MAX_VALUE;
+    while (low < high) {
+      int middle = low + (int) ((((long) high - low) + 1L) / 2L);
+      try {
+        SystemLimitException.checkMaxBytesLength(middle);
+        low = middle;
+      } catch (SystemLimitException | UnsupportedOperationException exception) {
+        high = middle - 1;
+      }
+    }
+    return low;
+  }
+
+  @RunWith(Parameterized.class)
+  public static class PrimitiveCreationTests {
+
+    @Parameters(name = "create({0})")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { Schema.Type.STRING, "string" }, { Schema.Type.BYTES, "bytes" },
+          { Schema.Type.INT, "int" }, { Schema.Type.LONG, "long" }, { Schema.Type.FLOAT, "float" },
+          { Schema.Type.DOUBLE, "double" }, { Schema.Type.BOOLEAN, "boolean" }, { Schema.Type.NULL, "null" } });
+    }
+
+    private final Schema.Type type;
+    private final String expectedName;
+
+    public PrimitiveCreationTests(Schema.Type type, String expectedName) {
+      this.type = type;
+      this.expectedName = expectedName;
+    }
+
+    @Test
+    public void shouldCreatePrimitiveSchema() {
+      Schema schema = Schema.create(type);
+
+      assertNotNull(schema);
+      assertEquals(type, schema.getType());
+      assertEquals(expectedName, schema.getName());
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class NonPrimitiveCreationTests {
+
+    @Parameters(name = "reject create({0})")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { Schema.Type.RECORD }, { Schema.Type.ARRAY }, { Schema.Type.UNION } });
+    }
+
+    private final Schema.Type type;
+
+    public NonPrimitiveCreationTests(Schema.Type type) {
+      this.type = type;
+    }
+
+    @Test
+    public void shouldRejectNonPrimitiveType() {
+      assertThrows(AvroRuntimeException.class, () -> Schema.create(type));
+    }
+  }
+
+  public static class RecordCreationTests {
+
+    @Test
+    public void shouldCreateRecordUsingBaseChoice() {
+      Schema record = Schema.createRecord("Person", "Person record", "org.example", false);
+
+      assertEquals(Schema.Type.RECORD, record.getType());
+      assertEquals("Person", record.getName());
+      assertEquals("org.example", record.getNamespace());
+      assertEquals("org.example.Person", record.getFullName());
+      assertEquals("Person record", record.getDoc());
+      assertFalse(record.hasFields());
+      assertFalse(record.isError());
+    }
+
+    @Test
+    public void shouldAcceptMinimumRecordMetadata() {
+      Schema record = Schema.createRecord("A", "d", "a", false);
+
+      assertEquals("A", record.getName());
+      assertEquals("d", record.getDoc());
+      assertEquals("a.A", record.getFullName());
+    }
+
+    @Test
+    public void shouldAcceptEmptyAndAbsentOptionalMetadata() {
+      Schema emptyValues = Schema.createRecord("First", "", "", false);
+      Schema nullValues = Schema.createRecord("Second", null, null, false);
+
+      assertEquals("", emptyValues.getDoc());
+      assertNull(emptyValues.getNamespace());
+      assertNull(nullValues.getDoc());
+      assertNull(nullValues.getNamespace());
+    }
+
+    @Test
+    public void shouldUseQualifiedNameWhenNamespaceIsNull() {
+      Schema record = Schema.createRecord("org.example.Person", null, null, false);
+
+      assertEquals("Person", record.getName());
+      assertEquals("org.example", record.getNamespace());
+      assertEquals("org.example.Person", record.getFullName());
+    }
+
+    @Test
+    public void shouldPreferQualifierToDifferentNamespace() {
+      Schema record = Schema.createRecord("org.example.Person", null, "other.space", false);
+
+      assertEquals("org.example", record.getNamespace());
+      assertEquals("org.example.Person", record.getFullName());
+    }
+
+    @Test
+    public void shouldCreateErrorRecord() {
+      Schema record = Schema.createRecord("Failure", null, "org.example", true);
+      assertTrue(record.isError());
+    }
+
+    @Test
+    public void shouldRejectInvalidRecordNames() {
+      assertThrows(SchemaParseException.class, () -> Schema.createRecord("", null, null, false));
+      assertThrows(SchemaParseException.class, () -> Schema.createRecord("1Person", null, null, false));
+    }
+  }
+
+  public static class RecordFieldTests {
+
+    @Test
+    public void shouldSetEmptyFieldList() {
+      Schema record = Schema.createRecord("Empty", null, null, false);
+      record.setFields(Collections.emptyList());
+
+      assertTrue(record.hasFields());
+      assertTrue(record.getFields().isEmpty());
+    }
+
+    @Test
+    public void shouldSetOneValidField() {
+      Schema record = Schema.createRecord("OneField", null, null, false);
+      Schema.Field id = new Schema.Field("id", primitive(Schema.Type.LONG));
+      record.setFields(Collections.singletonList(id));
+
+      assertSame(id, record.getField("id"));
+      assertEquals(0, id.pos());
+    }
+
+    @Test
+    public void shouldSetTwoDistinctFieldsInOrder() {
+      Schema record = Schema.createRecord("TwoFields", null, null, false);
+      Schema.Field id = new Schema.Field("id", primitive(Schema.Type.LONG));
+      Schema.Field name = new Schema.Field("name", primitive(Schema.Type.STRING));
+      record.setFields(Arrays.asList(id, name));
+
+      assertEquals(Arrays.asList(id, name), record.getFields());
+      assertEquals(0, id.pos());
+      assertEquals(1, name.pos());
+    }
+
+    @Test
+    public void shouldRejectDuplicateFieldNames() {
+      Schema record = Schema.createRecord("Duplicate", null, null, false);
+      List<Schema.Field> fields = Arrays.asList(new Schema.Field("id", primitive(Schema.Type.LONG)),
+          new Schema.Field("id", primitive(Schema.Type.STRING)));
+
+      assertThrows(AvroRuntimeException.class, () -> record.setFields(fields));
+    }
+
+    @Test
+    public void shouldRejectAlreadyUsedField() {
+      Schema.Field shared = new Schema.Field("id", primitive(Schema.Type.LONG));
+      Schema first = Schema.createRecord("First", null, null, false);
+      Schema second = Schema.createRecord("Second", null, null, false);
+      first.setFields(Collections.singletonList(shared));
+
+      assertThrows(AvroRuntimeException.class, () -> second.setFields(Collections.singletonList(shared)));
+    }
+
+    @Test
+    public void shouldRejectSecondInvocationAndPreserveOriginalFields() {
+      Schema record = Schema.createRecord("Person", null, null, false);
+      Schema.Field id = new Schema.Field("id", primitive(Schema.Type.LONG));
+      record.setFields(Collections.singletonList(id));
+
+      assertThrows(AvroRuntimeException.class,
+          () -> record.setFields(Collections.singletonList(new Schema.Field("name", primitive(Schema.Type.STRING)))));
+      assertEquals(Collections.singletonList(id), record.getFields());
+    }
+
+    @Test
+    public void shouldBuildDirectRecursiveRecord() {
+      Schema node = recursiveNode();
+      assertSame(node, node.getField("next").schema().getTypes().get(1));
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class InvalidFieldNameTests {
+
+    @Parameters(name = "invalid field name: {0}")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { "" }, { "1age" } });
+    }
+
+    private final String name;
+
+    public InvalidFieldNameTests(String name) {
+      this.name = name;
+    }
+
+    @Test
+    public void shouldRejectInvalidFieldName() {
+      assertThrows(SchemaParseException.class, () -> new Schema.Field(name, primitive(Schema.Type.INT)));
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class FieldOrderTests {
+
+    @Parameters(name = "order={0}")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { Schema.Field.Order.ASCENDING }, { Schema.Field.Order.DESCENDING },
+          { Schema.Field.Order.IGNORE } });
+    }
+
+    private final Schema.Field.Order order;
+
+    public FieldOrderTests(Schema.Field.Order order) {
+      this.order = order;
+    }
+
+    @Test
+    public void shouldSupportFieldOrder() {
+      Schema.Field field = new Schema.Field("age", primitive(Schema.Type.INT), "Age", 0, order);
+      assertEquals(order, field.order());
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class IntegerDefaultBoundaryTests {
+
+    @Parameters(name = "default={0}")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { Integer.MIN_VALUE }, { Integer.MAX_VALUE } });
+    }
+
+    private final int defaultValue;
+
+    public IntegerDefaultBoundaryTests(int defaultValue) {
+      this.defaultValue = defaultValue;
+    }
+
+    @Test
+    public void shouldAcceptIntegerDefaultBoundary() {
+      Schema.Field field = new Schema.Field("value", primitive(Schema.Type.INT), null, defaultValue);
+      assertEquals(defaultValue, field.defaultVal());
+    }
+  }
+
+  public static class FieldConstructionTests {
+
+    @Test
+    public void shouldCreateFieldUsingBaseChoice() {
+      Schema schema = primitive(Schema.Type.INT);
+      Schema.Field field = new Schema.Field("age", schema, "Age", 0, Schema.Field.Order.ASCENDING);
+
+      assertEquals("age", field.name());
+      assertSame(schema, field.schema());
+      assertEquals("Age", field.doc());
+      assertTrue(field.hasDefaultValue());
+      assertEquals(0, field.defaultVal());
+      assertEquals(-1, field.pos());
+    }
+
+    @Test
+    public void shouldHandleFieldDocumentationBoundaries() {
+      Schema.Field minimum = new Schema.Field("first", primitive(Schema.Type.INT), "d");
+      Schema.Field empty = new Schema.Field("second", primitive(Schema.Type.INT), "");
+      Schema.Field absent = new Schema.Field("third", primitive(Schema.Type.INT), null);
+
+      assertEquals("d", minimum.doc());
+      assertEquals("", empty.doc());
+      assertNull(absent.doc());
+    }
+
+    @Test
+    public void shouldDistinguishAbsentAndExplicitNullDefault() {
+      Schema.Field absent = new Schema.Field("first", primitive(Schema.Type.INT));
+      Schema nullable = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      Schema.Field explicitNull = new Schema.Field("second", nullable, null, Schema.Field.NULL_DEFAULT_VALUE);
+
+      assertFalse(absent.hasDefaultValue());
+      assertTrue(explicitNull.hasDefaultValue());
+      assertSame(JsonProperties.NULL_VALUE, explicitNull.defaultVal());
+    }
+
+    @Test
+    public void shouldRejectIncompatibleDefault() {
+      assertThrows(AvroTypeException.class, () -> new Schema.Field("age", primitive(Schema.Type.INT), null, "zero"));
+    }
+
+    @Test
+    public void shouldRejectMissingSchemaOrOrder() {
+      assertThrows(NullPointerException.class, () -> new Schema.Field("age", null));
+      assertThrows(NullPointerException.class,
+          () -> new Schema.Field("age", primitive(Schema.Type.INT), null, 0, null));
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class InvalidEnumSymbolTests {
+
+    @Parameters(name = "invalid symbol: {0}")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { "" }, { "1OPEN" }, { "IN PROGRESS" } });
+    }
+
+    private final String symbol;
+
+    public InvalidEnumSymbolTests(String symbol) {
+      this.symbol = symbol;
+    }
+
+    @Test
+    public void shouldRejectInvalidEnumSymbol() {
+      assertThrows(SchemaParseException.class,
+          () -> Schema.createEnum("Status", null, null, Collections.singletonList(symbol), null));
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class EnumDefaultPositionTests {
+
+    @Parameters(name = "default={0}")
+    public static Collection<Object[]> data() {
+      return Arrays.asList(new Object[][] { { "OPEN" }, { "CLOSED" } });
+    }
+
+    private final String defaultSymbol;
+
+    public EnumDefaultPositionTests(String defaultSymbol) {
+      this.defaultSymbol = defaultSymbol;
+    }
+
+    @Test
+    public void shouldAcceptFirstOrLastSymbolAsDefault() {
+      Schema schema = Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "CLOSED"), defaultSymbol);
+      assertEquals(defaultSymbol, schema.getEnumDefault());
+    }
+  }
+
+  public static class EnumTests {
+
+    @Test
+    public void shouldCreateEnumUsingBaseChoice() {
+      Schema schema = Schema.createEnum("Status", "Status values", "org.example", Arrays.asList("OPEN", "CLOSED"),
+          "OPEN");
+
+      assertEquals(Schema.Type.ENUM, schema.getType());
+      assertEquals("org.example.Status", schema.getFullName());
+      assertEquals(Arrays.asList("OPEN", "CLOSED"), schema.getEnumSymbols());
+      assertEquals(0, schema.getEnumOrdinal("OPEN"));
+      assertEquals(1, schema.getEnumOrdinal("CLOSED"));
+      assertTrue(schema.hasEnumSymbol("OPEN"));
+      assertFalse(schema.hasEnumSymbol("UNKNOWN"));
+    }
+
+    @Test
+    public void shouldAcceptSingleAndEmptySymbolLists() {
+      Schema single = Schema.createEnum("Single", null, null, Collections.singletonList("OPEN"), "OPEN");
+      Schema empty = Schema.createEnum("Empty", null, null, Collections.emptyList(), null);
+
+      assertEquals(1, single.getEnumSymbols().size());
+      assertTrue(empty.getEnumSymbols().isEmpty());
+    }
+
+    @Test
+    public void shouldCreateEnumWithoutDefault() {
+      Schema schema = Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "CLOSED"), null);
+      assertNull(schema.getEnumDefault());
+    }
+
+    @Test
+    public void shouldRejectDuplicateOrNullSymbols() {
+      assertThrows(SchemaParseException.class,
+          () -> Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "OPEN"), null));
+      assertThrows(RuntimeException.class,
+          () -> Schema.createEnum("Status", null, null, Collections.singletonList(null), null));
+    }
+
+    @Test
+    public void shouldRejectDefaultOutsideSymbolSet() {
+      assertThrows(SchemaParseException.class,
+          () -> Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "CLOSED"), "UNKNOWN"));
+    }
+  }
+
+  public static class ArrayTests {
+
+    @Test
+    public void shouldCreateArrayOfPrimitiveAndNamedType() {
+      Schema integer = primitive(Schema.Type.INT);
+      Schema person = emptyRecord("Person", "org.example");
+
+      assertSame(integer, Schema.createArray(integer).getElementType());
+      assertSame(person, Schema.createArray(person).getElementType());
+    }
+
+    @Test
+    public void shouldCreateNestedArray() {
+      Schema inner = Schema.createArray(primitive(Schema.Type.INT));
+      assertSame(inner, Schema.createArray(inner).getElementType());
+    }
+
+    @Test
+    public void shouldCreateArrayOfNullableUnionAndAcceptNullReference() {
+      Schema union = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+
+      assertSame(union, Schema.createArray(union).getElementType());
+      assertNull(Schema.createArray(null).getElementType());
+    }
+  }
+
+  public static class MapTests {
+
+    @Test
+    public void shouldCreateMapOfPrimitiveAndNamedType() {
+      Schema value = primitive(Schema.Type.LONG);
+      Schema person = emptyRecord("Person", "org.example");
+
+      assertSame(value, Schema.createMap(value).getValueType());
+      assertSame(person, Schema.createMap(person).getValueType());
+    }
+
+    @Test
+    public void shouldCreateNestedMap() {
+      Schema inner = Schema.createMap(primitive(Schema.Type.INT));
+      assertSame(inner, Schema.createMap(inner).getValueType());
+    }
+
+    @Test
+    public void shouldCreateMapOfNullableUnionAndAcceptNullReference() {
+      Schema union = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+
+      assertSame(union, Schema.createMap(union).getValueType());
+      assertNull(Schema.createMap(null).getValueType());
+    }
+  }
+
+  public static class UnionTests {
+
+    @Test
+    public void shouldCreateEmptyUnion() {
+      Schema union = Schema.createUnion(Collections.emptyList());
+      assertTrue(union.isUnion());
+      assertTrue(union.getTypes().isEmpty());
+    }
+
+    @Test
+    public void shouldCreateSingleBranchUnion() {
+      Schema integer = primitive(Schema.Type.INT);
+      Schema union = Schema.createUnion(integer);
+      assertEquals(Collections.singletonList(integer), union.getTypes());
+    }
+
+    @Test
+    public void shouldCreateTwoDistinctBranchesInOrder() {
+      Schema union = Schema.createUnion(primitive(Schema.Type.INT), primitive(Schema.Type.STRING));
+
+      assertEquals(Integer.valueOf(0), union.getIndexNamed("int"));
+      assertEquals(Integer.valueOf(1), union.getIndexNamed("string"));
+    }
+
+    @Test
+    public void shouldCreateNullableUnion() {
+      Schema union = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertTrue(union.isNullable());
+    }
+
+    @Test
+    public void shouldRejectDuplicateOrNestedBranches() {
+      assertThrows(AvroRuntimeException.class,
+          () -> Schema.createUnion(primitive(Schema.Type.INT), primitive(Schema.Type.INT)));
+
+      Schema nested = Schema.createUnion(primitive(Schema.Type.INT), primitive(Schema.Type.STRING));
+      assertThrows(AvroRuntimeException.class, () -> Schema.createUnion(Collections.singletonList(nested)));
+    }
+
+    @Test
+    public void shouldRejectNullBranchOrNullList() {
+      assertThrows(NullPointerException.class, () -> Schema.createUnion(Collections.singletonList(null)));
+      assertThrows(NullPointerException.class, () -> Schema.createUnion((List<Schema>) null));
+    }
+
+    @Test
+    public void shouldProduceEquivalentUnionForVarargs() {
+      Schema integer = primitive(Schema.Type.INT);
+      Schema string = primitive(Schema.Type.STRING);
+
+      assertEquals(Schema.createUnion(Arrays.asList(integer, string)), Schema.createUnion(integer, string));
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class ValidFixedSizeTests {
+
+    @Parameters(name = "valid size={0}")
+    public static Collection<Object[]> data() {
+      int maximum = maximumSupportedFixedSize();
+      return Arrays.asList(new Object[][] { { 0 }, { 1 }, { maximum } });
+    }
+
+    private final int size;
+
+    public ValidFixedSizeTests(int size) {
+      this.size = size;
+    }
+
+    @Test
+    public void shouldAcceptValidFixedSize() {
+      assertEquals(size, Schema.createFixed("Hash", null, null, size).getFixedSize());
+    }
+  }
+
+  @RunWith(Parameterized.class)
+  public static class InvalidFixedSizeTests {
+
+    @Parameters(name = "invalid size={0}, expected={1}")
+    public static Collection<Object[]> data() {
+      int maximum = maximumSupportedFixedSize();
+
+      List<Object[]> values = new ArrayList<>();
+
+      values.add(new Object[] { -1, AvroRuntimeException.class });
+
+      values.add(new Object[] { Integer.MIN_VALUE, AvroRuntimeException.class });
+
+      if (maximum < Integer.MAX_VALUE) {
+        values.add(new Object[] { maximum + 1, UnsupportedOperationException.class });
+      }
+
+      return values;
+    }
+
+    private final int size;
+    private final Class<? extends Throwable> expectedException;
+
+    public InvalidFixedSizeTests(int size, Class<? extends Throwable> expectedException) {
+
+      this.size = size;
+      this.expectedException = expectedException;
+    }
+
+    @Test
+    public void shouldRejectInvalidFixedSize() {
+      assertThrows(expectedException, () -> Schema.createFixed("Hash", null, null, size));
+    }
+  }
+
+  public static class FixedTests {
+
+    @Test
+    public void shouldCreateFixedUsingBaseChoice() {
+      Schema fixed = Schema.createFixed("Hash", "Hash bytes", "org.example", 16);
+
+      assertEquals(Schema.Type.FIXED, fixed.getType());
+      assertEquals("org.example.Hash", fixed.getFullName());
+      assertEquals("Hash bytes", fixed.getDoc());
+      assertEquals(16, fixed.getFixedSize());
+    }
+
+    @Test
+    public void shouldAcceptMinimumFixedMetadata() {
+      Schema fixed = Schema.createFixed("A", "d", "a", 1);
+      assertEquals("a.A", fixed.getFullName());
+      assertEquals("d", fixed.getDoc());
+    }
+
+    @Test
+    public void shouldPreferQualifierToDifferentNamespace() {
+      Schema fixed = Schema.createFixed("org.example.Hash", null, "other.space", 1);
+      assertEquals("org.example.Hash", fixed.getFullName());
+    }
+
+    @Test
+    public void shouldRejectEmptyFixedName() {
+      assertThrows(SchemaParseException.class, () -> Schema.createFixed("", null, null, 1));
+    }
+  }
+
+  public static class EqualityTests {
+
+    @Test
+    public void shouldBeReflexive() {
+      Schema schema = primitive(Schema.Type.INT);
+      assertEquals(schema, schema);
+    }
+
+    @Test
+    public void shouldEqualDistinctEquivalentSchemasAndHashes() {
+      Schema first = Schema.createArray(primitive(Schema.Type.INT));
+      Schema second = Schema.createArray(primitive(Schema.Type.INT));
+
+      assertEquals(first, second);
+      assertEquals(first.hashCode(), second.hashCode());
+    }
+
+    @Test
+    public void shouldDistinguishOneStructuralDifference() {
+      assertFalse(
+          Schema.createArray(primitive(Schema.Type.INT)).equals(Schema.createArray(primitive(Schema.Type.STRING))));
+    }
+
+    @Test
+    public void shouldDistinguishDifferentTypes() {
+      assertFalse(Schema.createArray(primitive(Schema.Type.INT)).equals(Schema.createMap(primitive(Schema.Type.INT))));
+    }
+
+    @Test
+    public void shouldReturnFalseForNullAndNonSchemaObject() {
+      Schema schema = primitive(Schema.Type.INT);
+      assertFalse(schema.equals(null));
+      assertFalse(schema.equals(new Object()));
+    }
+
+    @Test
+    public void shouldDetectOnePropertyDifference() {
+      Schema first = primitive(Schema.Type.STRING);
+      Schema second = primitive(Schema.Type.STRING);
+      first.addProp("custom", "value");
+      assertFalse(first.equals(second));
+    }
+
+    @Test
+    public void shouldCompareDirectRecursiveSchemas() {
+      Schema first = recursiveNode();
+      Schema second = recursiveNode();
+
+      assertEquals(first, second);
+      assertEquals(first.hashCode(), second.hashCode());
+    }
+  }
+
+  public static class AliasApplicationTests {
+
+    @Test
+    public void shouldReturnWriterForEquivalentSchemas() {
+      Schema writer = recordWithStringFields("Person", "org.example", "name");
+      Schema reader = recordWithStringFields("Person", "org.example", "name");
+      assertSame(writer, Schema.applyAliases(writer, reader));
+    }
+
+    @Test
+    public void shouldReturnWriterWhenNoAliasesApply() {
+      Schema writer = recordWithStringFields("OldPerson", "org.example", "name");
+      Schema reader = recordWithStringFields("Person", "org.example", "name");
+      assertSame(writer, Schema.applyAliases(writer, reader));
+    }
+
+    @Test
+    public void shouldApplyRecordAlias() {
+      Schema writer = recordWithStringFields("OldPerson", "org.example", "name");
+      Schema reader = recordWithStringFields("Person", "org.example", "name");
+      reader.addAlias("OldPerson");
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertEquals("org.example.Person", result.getFullName());
+      assertEquals("name", result.getFields().get(0).name());
+    }
+
+    @Test
+    public void shouldApplyFieldAlias() {
+      Schema writer = recordWithStringFields("Person", "org.example", "oldName");
+      Schema reader = recordWithStringFields("Person", "org.example", "name");
+      reader.getField("name").addAlias("oldName");
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertEquals("name", result.getFields().get(0).name());
+      assertEquals(0, result.getFields().get(0).pos());
+    }
+
+    @Test
+    public void shouldRejectNullWriterOrReader() {
+      Schema schema = recordWithStringFields("Person", "org.example", "name");
+      assertThrows(NullPointerException.class, () -> Schema.applyAliases(null, schema));
+      assertThrows(NullPointerException.class, () -> Schema.applyAliases(schema, null));
+    }
+  }
+}
+
+================================================================================
+END FILE: ISW2SchemaBBTest.java
+================================================================================
+
+================================================================================
+BEGIN FILE: ISW2SchemaCFTest.java
+================================================================================
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information.
+ */
+package org.apache.avro;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
+import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.Collections;
+
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.BigIntegerNode;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.DoubleNode;
+import com.fasterxml.jackson.databind.node.IntNode;
+import com.fasterxml.jackson.databind.node.LongNode;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
+import org.junit.Test;
+import org.junit.experimental.runners.Enclosed;
+import org.junit.runner.RunWith;
+import static org.junit.Assert.assertThrows;
+
+/**
+ * Coverage-focused black-box tests for {@link Schema}.
+ *
+ * <p>
+ * The test cases implement the tables prepared for:
+ * </p>
+ * <ul>
+ * <li>equals(Object) and hashCode() of the relevant nested schema classes;</li>
+ * <li>Schema.isValidDefault(JsonNode);</li>
+ * <li>the still-uncovered branches of Schema.applyAliases(writer, reader).</li>
+ * </ul>
+ *
+ * <p>
+ * The tests use only public behavior. Private helpers are exercised through the
+ * corresponding public APIs.
+ * </p>
+ */
+@RunWith(Enclosed.class)
+public class ISW2SchemaCFTest {
+
+  private static Schema primitive(Schema.Type type) {
+    return Schema.create(type);
+  }
+
+  private static Schema fixed(String name, String namespace, String doc, int size) {
+    return Schema.createFixed(name, doc, namespace, size);
+  }
+
+  private static Schema enumSchema(String name, String namespace, String doc, String enumDefault) {
+    return Schema.createEnum(name, doc, namespace, Arrays.asList("OPEN", "CLOSED"), enumDefault);
+  }
+
+  private static Schema recordWithStringField(String name, String namespace) {
+    return Schema.createRecord(name, null, namespace, false,
+        Collections.singletonList(new Schema.Field("name", primitive(Schema.Type.STRING))));
+  }
+
+  private static Schema directRecursiveRecord(String name, String namespace, String alias) {
+    Schema record = Schema.createRecord(name, null, namespace, false);
+    if (alias != null) {
+      record.addAlias(alias);
+    }
+    Schema recursiveUnion = Schema.createUnion(primitive(Schema.Type.NULL), record);
+    Schema.Field next = new Schema.Field("next", recursiveUnion, null, Schema.Field.NULL_DEFAULT_VALUE,
+        Schema.Field.Order.ASCENDING);
+    record.setFields(Collections.singletonList(next));
+    return record;
+  }
+
+  public static class FixedSchemaEqualityTests {
+
+    @Test
+    public void shouldBeReflexiveForFixedSchema() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      assertTrue(receiver.equals(receiver));
+    }
+
+    @Test
+    public void shouldEqualDistinctEquivalentFixedSchemas() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      Schema other = fixed("Hash", "org.example", null, 16);
+
+      assertEquals(receiver, other);
+      assertEquals(other, receiver);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldDistinguishFixedSize() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      Schema other = fixed("Hash", "org.example", null, 32);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFixedName() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      Schema other = fixed("Digest", "org.example", null, 16);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFixedNamespace() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      Schema other = fixed("Hash", "org.other", null, 16);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFixedProperties() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      Schema other = fixed("Hash", "org.example", null, 16);
+      receiver.addProp("custom", "value");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldIgnoreFixedDocumentationInEquality() {
+      Schema receiver = fixed("Hash", "org.example", "first", 16);
+      Schema other = fixed("Hash", "org.example", "second", 16);
+
+      assertEquals(receiver, other);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldReturnFalseForFixedNullAndDifferentType() {
+      Schema receiver = fixed("Hash", "org.example", null, 16);
+      assertFalse(receiver.equals(null));
+      assertFalse(receiver.equals(primitive(Schema.Type.STRING)));
+    }
+  }
+
+  public static class MapSchemaEqualityTests {
+
+    @Test
+    public void shouldBeReflexiveForMapSchema() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      assertTrue(receiver.equals(receiver));
+    }
+
+    @Test
+    public void shouldEqualDistinctEquivalentMapSchemas() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      Schema other = Schema.createMap(primitive(Schema.Type.INT));
+
+      assertEquals(receiver, other);
+      assertEquals(other, receiver);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldDistinguishMapValueSchema() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      Schema other = Schema.createMap(primitive(Schema.Type.STRING));
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldEqualEquivalentNestedMapSchemas() {
+      Schema receiver = Schema.createMap(Schema.createArray(primitive(Schema.Type.INT)));
+      Schema other = Schema.createMap(Schema.createArray(primitive(Schema.Type.INT)));
+
+      assertEquals(receiver, other);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldDistinguishNestedMapSchemas() {
+      Schema receiver = Schema.createMap(Schema.createMap(primitive(Schema.Type.INT)));
+      Schema other = Schema.createMap(Schema.createMap(primitive(Schema.Type.STRING)));
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishMapProperties() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      Schema other = Schema.createMap(primitive(Schema.Type.INT));
+      receiver.addProp("custom", "value");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldReturnFalseForMapNullAndDifferentType() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      assertFalse(receiver.equals(null));
+      assertFalse(receiver.equals(Schema.createArray(primitive(Schema.Type.INT))));
+    }
+  }
+
+  public static class EnumSchemaEqualityTests {
+
+    @Test
+    public void shouldBeReflexiveForEnumSchema() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      assertTrue(receiver.equals(receiver));
+    }
+
+    @Test
+    public void shouldEqualDistinctEquivalentEnumSchemas() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = enumSchema("Status", "org.example", null, "OPEN");
+
+      assertEquals(receiver, other);
+      assertEquals(other, receiver);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldDistinguishEnumName() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = enumSchema("State", "org.example", null, "OPEN");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishEnumNamespace() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = enumSchema("Status", "org.other", null, "OPEN");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishEnumSymbols() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = Schema.createEnum("Status", null, "org.example", Arrays.asList("OPEN", "PENDING"), "OPEN");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishEnumSymbolOrder() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = Schema.createEnum("Status", null, "org.example", Arrays.asList("CLOSED", "OPEN"), "OPEN");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishEnumProperties() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = enumSchema("Status", "org.example", null, "OPEN");
+      receiver.addProp("custom", "value");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldIgnoreEnumDefaultInEquality() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema other = enumSchema("Status", "org.example", null, "CLOSED");
+
+      assertEquals(receiver, other);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldIgnoreEnumDocumentationInEquality() {
+      Schema receiver = enumSchema("Status", "org.example", "first", "OPEN");
+      Schema other = enumSchema("Status", "org.example", "second", "OPEN");
+
+      assertEquals(receiver, other);
+      assertEquals(receiver.hashCode(), other.hashCode());
+    }
+
+    @Test
+    public void shouldReturnFalseForEnumNullAndDifferentType() {
+      Schema receiver = enumSchema("Status", "org.example", null, "OPEN");
+      Schema otherType = fixed("Status", "org.example", null, 16);
+
+      assertFalse(receiver.equals(null));
+      assertFalse(receiver.equals(otherType));
+    }
+  }
+
+  public static class UnionSchemaEqualityCoverageTests {
+
+    @Test
+    public void shouldBeReflexiveForUnionSchema() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertTrue(receiver.equals(receiver));
+    }
+
+    @Test
+    public void shouldReturnFalseForUnionAndDifferentType() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertFalse(receiver.equals(primitive(Schema.Type.STRING)));
+    }
+
+    @Test
+    public void shouldDistinguishUnionBranchOrder() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      Schema other = Schema.createUnion(primitive(Schema.Type.STRING), primitive(Schema.Type.NULL));
+      assertFalse(receiver.equals(other));
+    }
+  }
+
+  public static class RecordSchemaEqualityCoverageTests {
+
+    @Test
+    public void shouldBeReflexiveForRecordSchema() {
+      Schema receiver = recordWithStringField("Person", "org.example");
+      assertTrue(receiver.equals(receiver));
+    }
+
+    @Test
+    public void shouldDistinguishRecordProperties() {
+      Schema receiver = recordWithStringField("Person", "org.example");
+      Schema other = recordWithStringField("Person", "org.example");
+      receiver.addProp("custom", "value");
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldRejectRecordWithDifferentCachedHash() {
+      Schema receiver = recordWithStringField("Person", "org.example");
+      Schema other = recordWithStringField("Customer", "org.example");
+
+      int receiverHash = receiver.hashCode();
+      int otherHash = other.hashCode();
+
+      assertNotEquals(receiverHash, otherHash);
+      assertFalse(receiver.equals(other));
+    }
+  }
+
+  public static class FieldEqualityCoverageTests {
+
+    @Test
+    public void shouldReturnFalseForFieldNullAndNonFieldObject() {
+      Schema.Field receiver = new Schema.Field("age", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+
+      assertFalse(receiver.equals(null));
+      assertFalse(receiver.equals(new Object()));
+    }
+
+    @Test
+    public void shouldDistinguishFieldName() {
+      Schema.Field receiver = new Schema.Field("age", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+      Schema.Field other = new Schema.Field("years", primitive(Schema.Type.INT), null, 0, Schema.Field.Order.ASCENDING);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFieldSchema() {
+      Schema.Field receiver = new Schema.Field("value", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+      Schema.Field other = new Schema.Field("value", primitive(Schema.Type.LONG), null, 0L,
+          Schema.Field.Order.ASCENDING);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFieldDefault() {
+      Schema.Field receiver = new Schema.Field("age", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+      Schema.Field other = new Schema.Field("age", primitive(Schema.Type.INT), null, 1, Schema.Field.Order.ASCENDING);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFieldOrder() {
+      Schema.Field receiver = new Schema.Field("age", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+      Schema.Field other = new Schema.Field("age", primitive(Schema.Type.INT), null, 0, Schema.Field.Order.DESCENDING);
+      assertFalse(receiver.equals(other));
+    }
+
+    @Test
+    public void shouldDistinguishFieldProperties() {
+      Schema.Field receiver = new Schema.Field("age", primitive(Schema.Type.INT), null, 0,
+          Schema.Field.Order.ASCENDING);
+      Schema.Field other = new Schema.Field("age", primitive(Schema.Type.INT), null, 0, Schema.Field.Order.ASCENDING);
+      receiver.addProp("custom", "value");
+      assertFalse(receiver.equals(other));
+    }
+  }
+
+  public static class SimpleDefaultValidationTests {
+
+    @Test
+    public void shouldRejectJavaNullDefaultValue() {
+      assertFalse(primitive(Schema.Type.NULL).isValidDefault(null));
+    }
+
+    @Test
+    public void shouldValidateStringDefaults() {
+      Schema receiver = primitive(Schema.Type.STRING);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("value")));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(1)));
+    }
+
+    @Test
+    public void shouldValidateBytesDefaults() {
+      Schema receiver = primitive(Schema.Type.BYTES);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("data")));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(1)));
+    }
+
+    @Test
+    public void shouldValidateEnumDefaultsAsText() {
+      Schema receiver = Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "CLOSED"), null);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("OPEN")));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(0)));
+    }
+
+    @Test
+    public void shouldCharacterizeUnknownEnumSymbol() {
+      Schema receiver = Schema.createEnum("Status", null, null, Arrays.asList("OPEN", "CLOSED"), null);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("UNKNOWN")));
+    }
+
+    @Test
+    public void shouldValidateFixedDefaultsAsText() {
+      Schema receiver = fixed("Hash", null, null, 4);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("ABCD")));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(4)));
+    }
+
+    @Test
+    public void shouldCharacterizeFixedTextLength() {
+      Schema receiver = fixed("Hash", null, null, 4);
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("A")));
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("TOO-LONG")));
+    }
+
+    @Test
+    public void shouldValidateBooleanDefaults() {
+      Schema receiver = primitive(Schema.Type.BOOLEAN);
+      assertTrue(receiver.isValidDefault(BooleanNode.TRUE));
+      assertTrue(receiver.isValidDefault(BooleanNode.FALSE));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("true")));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(1)));
+    }
+
+    @Test
+    public void shouldValidateJsonNullDefault() {
+      Schema receiver = primitive(Schema.Type.NULL);
+      assertTrue(receiver.isValidDefault(NullNode.getInstance()));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("null")));
+    }
+  }
+
+  public static class NumericDefaultValidationTests {
+
+    @Test
+    public void shouldAcceptIntegerBoundaries() {
+      Schema receiver = primitive(Schema.Type.INT);
+      assertTrue(receiver.isValidDefault(IntNode.valueOf(Integer.MIN_VALUE)));
+      assertTrue(receiver.isValidDefault(IntNode.valueOf(Integer.MAX_VALUE)));
+    }
+
+    @Test
+    public void shouldRejectIntegerOutsideRange() {
+      Schema receiver = primitive(Schema.Type.INT);
+      assertFalse(receiver.isValidDefault(LongNode.valueOf((long) Integer.MAX_VALUE + 1L)));
+      assertFalse(receiver.isValidDefault(LongNode.valueOf((long) Integer.MIN_VALUE - 1L)));
+    }
+
+    @Test
+    public void shouldRejectNonIntegralIntegerDefaults() {
+      Schema receiver = primitive(Schema.Type.INT);
+      assertFalse(receiver.isValidDefault(DoubleNode.valueOf(1.5)));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("1")));
+    }
+
+    @Test
+    public void shouldAcceptLongBoundaries() {
+      Schema receiver = primitive(Schema.Type.LONG);
+      assertTrue(receiver.isValidDefault(LongNode.valueOf(Long.MIN_VALUE)));
+      assertTrue(receiver.isValidDefault(LongNode.valueOf(Long.MAX_VALUE)));
+    }
+
+    @Test
+    public void shouldRejectLongOutsideRange() {
+      Schema receiver = primitive(Schema.Type.LONG);
+      BigInteger outsideLong = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE);
+      assertFalse(receiver.isValidDefault(BigIntegerNode.valueOf(outsideLong)));
+    }
+
+    @Test
+    public void shouldRejectNonIntegralLongDefaults() {
+      Schema receiver = primitive(Schema.Type.LONG);
+      assertFalse(receiver.isValidDefault(DoubleNode.valueOf(1.5)));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("1")));
+    }
+
+    @Test
+    public void shouldValidateFloatDefaults() {
+      Schema receiver = primitive(Schema.Type.FLOAT);
+      assertTrue(receiver.isValidDefault(DoubleNode.valueOf(1.5)));
+      assertTrue(receiver.isValidDefault(IntNode.valueOf(1)));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("1.5")));
+    }
+
+    @Test
+    public void shouldValidateDoubleDefaults() {
+      Schema receiver = primitive(Schema.Type.DOUBLE);
+      assertTrue(receiver.isValidDefault(DoubleNode.valueOf(1.5)));
+      assertTrue(receiver.isValidDefault(LongNode.valueOf(1L)));
+      assertFalse(receiver.isValidDefault(BooleanNode.TRUE));
+    }
+  }
+
+  public static class ArrayDefaultValidationTests {
+
+    @Test
+    public void shouldRejectNonArrayDefault() {
+      Schema receiver = Schema.createArray(primitive(Schema.Type.INT));
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("not-array")));
+    }
+
+    @Test
+    public void shouldAcceptEmptyArrayDefault() {
+      Schema receiver = Schema.createArray(primitive(Schema.Type.INT));
+      ArrayNode jsonValue = Schema.MAPPER.createArrayNode();
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldAcceptArrayWithValidElements() {
+      Schema receiver = Schema.createArray(primitive(Schema.Type.INT));
+      ArrayNode jsonValue = Schema.MAPPER.createArrayNode().add(1).add(2).add(3);
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldRejectArrayWithInvalidElement() {
+      Schema receiver = Schema.createArray(primitive(Schema.Type.INT));
+      ArrayNode jsonValue = Schema.MAPPER.createArrayNode().add(1).add("invalid").add(3);
+      assertFalse(receiver.isValidDefault(jsonValue));
+    }
+  }
+
+  public static class MapDefaultValidationTests {
+
+    @Test
+    public void shouldRejectNonObjectMapDefault() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      assertFalse(receiver.isValidDefault(Schema.MAPPER.createArrayNode()));
+    }
+
+    @Test
+    public void shouldAcceptEmptyMapDefault() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldAcceptMapWithValidValues() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.put("first", 1);
+      jsonValue.put("second", 2);
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldRejectMapWithInvalidValue() {
+      Schema receiver = Schema.createMap(primitive(Schema.Type.INT));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.put("first", 1);
+      jsonValue.put("second", "invalid");
+      assertFalse(receiver.isValidDefault(jsonValue));
+    }
+  }
+
+  public static class UnionDefaultValidationTests {
+
+    @Test
+    public void shouldAcceptDefaultMatchingFirstUnionBranch() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertTrue(receiver.isValidDefault(NullNode.getInstance()));
+    }
+
+    @Test
+    public void shouldAcceptDefaultMatchingLaterUnionBranch() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertTrue(receiver.isValidDefault(TextNode.valueOf("value")));
+    }
+
+    @Test
+    public void shouldRejectDefaultMatchingNoUnionBranch() {
+      Schema receiver = Schema.createUnion(primitive(Schema.Type.NULL), primitive(Schema.Type.STRING));
+      assertFalse(receiver.isValidDefault(IntNode.valueOf(1)));
+    }
+
+    @Test
+    public void shouldRejectAnyDefaultForEmptyUnion() {
+      Schema receiver = Schema.createUnion(Collections.emptyList());
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("value")));
+    }
+  }
+
+  public static class RecordDefaultValidationTests {
+
+    @Test
+    public void shouldRejectNonObjectRecordDefault() {
+      Schema receiver = Schema.createRecord("Person", null, "org.example", false, Collections.emptyList());
+      assertFalse(receiver.isValidDefault(TextNode.valueOf("not-record")));
+    }
+
+    @Test
+    public void shouldAcceptEmptyObjectForEmptyRecord() {
+      Schema receiver = Schema.createRecord("Empty", null, "org.example", false, Collections.emptyList());
+      assertTrue(receiver.isValidDefault(Schema.MAPPER.createObjectNode()));
+    }
+
+    @Test
+    public void shouldAcceptRecordWithValidPresentField() {
+      Schema.Field age = new Schema.Field("age", primitive(Schema.Type.INT));
+      Schema receiver = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(age));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.put("age", 25);
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldRejectRecordWithInvalidPresentField() {
+      Schema.Field age = new Schema.Field("age", primitive(Schema.Type.INT));
+      Schema receiver = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(age));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.put("age", "invalid");
+      assertFalse(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldAcceptMissingFieldWithValidDefault() {
+      Schema.Field age = new Schema.Field("age", primitive(Schema.Type.INT), null, 0, Schema.Field.Order.ASCENDING);
+      Schema receiver = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(age));
+      assertTrue(receiver.isValidDefault(Schema.MAPPER.createObjectNode()));
+    }
+
+    @Test
+    public void shouldRejectMissingFieldWithoutDefault() {
+      Schema.Field age = new Schema.Field("age", primitive(Schema.Type.INT));
+      Schema receiver = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(age));
+      assertFalse(receiver.isValidDefault(Schema.MAPPER.createObjectNode()));
+    }
+
+    @Test
+    public void shouldAcceptRecordWithNestedValidField() {
+      Schema.Field values = new Schema.Field("values", Schema.createArray(primitive(Schema.Type.INT)));
+      Schema receiver = Schema.createRecord("Container", null, "org.example", false, Collections.singletonList(values));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.set("values", Schema.MAPPER.createArrayNode().add(1).add(2));
+      assertTrue(receiver.isValidDefault(jsonValue));
+    }
+
+    @Test
+    public void shouldRejectRecordWithNestedInvalidField() {
+      Schema.Field values = new Schema.Field("values", Schema.createArray(primitive(Schema.Type.INT)));
+      Schema receiver = Schema.createRecord("Container", null, "org.example", false, Collections.singletonList(values));
+      ObjectNode jsonValue = Schema.MAPPER.createObjectNode();
+      jsonValue.set("values", Schema.MAPPER.createArrayNode().add(1).add("invalid"));
+      assertFalse(receiver.isValidDefault(jsonValue));
+    }
+  }
+
+  public static class ApplyAliasesCoverageTests {
+
+    @Test
+    public void shouldApplyEnumAlias() {
+      Schema writer = Schema.createEnum("OldStatus", "status", "org.example", Arrays.asList("OPEN", "CLOSED"), "OPEN");
+      writer.addProp("source", "writer");
+
+      Schema reader = Schema.createEnum("Status", "status", "org.example", Arrays.asList("OPEN", "CLOSED"), "OPEN");
+      reader.addAlias("OldStatus");
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertEquals(Schema.Type.ENUM, result.getType());
+      assertEquals("org.example.Status", result.getFullName());
+      assertEquals(Arrays.asList("OPEN", "CLOSED"), result.getEnumSymbols());
+      assertEquals("OPEN", result.getEnumDefault());
+      assertEquals("writer", result.getProp("source"));
+    }
+
+    @Test
+    public void shouldApplyFixedAlias() {
+      Schema writer = fixed("OldHash", "org.example", "hash", 16);
+      writer.addProp("source", "writer");
+
+      Schema reader = fixed("Hash", "org.example", "hash", 16);
+      reader.addAlias("OldHash");
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertEquals(Schema.Type.FIXED, result.getType());
+      assertEquals("org.example.Hash", result.getFullName());
+      assertEquals(16, result.getFixedSize());
+      assertEquals("writer", result.getProp("source"));
+    }
+
+    @Test
+    public void shouldApplyAliasesInsideArrayMapAndUnion() {
+      Schema writerPerson = recordWithStringField("OldPerson", "org.example");
+      Schema readerPerson = recordWithStringField("Person", "org.example");
+      readerPerson.addAlias("OldPerson");
+
+      Schema.Field writerArray = new Schema.Field("peopleArray", Schema.createArray(writerPerson));
+      Schema.Field writerMap = new Schema.Field("peopleMap", Schema.createMap(writerPerson));
+      Schema.Field writerOptional = new Schema.Field("optionalPerson",
+          Schema.createUnion(primitive(Schema.Type.NULL), writerPerson), null, Schema.Field.NULL_DEFAULT_VALUE);
+      Schema writer = Schema.createRecord("Container", null, "org.example", false,
+          Arrays.asList(writerArray, writerMap, writerOptional));
+      writer.addProp("source", "writer");
+
+      Schema.Field readerArray = new Schema.Field("peopleArray", Schema.createArray(readerPerson));
+      Schema.Field readerMap = new Schema.Field("peopleMap", Schema.createMap(readerPerson));
+      Schema.Field readerOptional = new Schema.Field("optionalPerson",
+          Schema.createUnion(primitive(Schema.Type.NULL), readerPerson), null, Schema.Field.NULL_DEFAULT_VALUE);
+      Schema reader = Schema.createRecord("Container", null, "org.example", false,
+          Arrays.asList(readerArray, readerMap, readerOptional));
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertEquals(Schema.Type.RECORD, result.getType());
+      assertEquals("org.example.Container", result.getFullName());
+      assertEquals(Arrays.asList("peopleArray", "peopleMap", "optionalPerson"), Arrays.asList(
+          result.getFields().get(0).name(), result.getFields().get(1).name(), result.getFields().get(2).name()));
+
+      Schema arrayElement = result.getField("peopleArray").schema().getElementType();
+      Schema mapValue = result.getField("peopleMap").schema().getValueType();
+      Schema optional = result.getField("optionalPerson").schema();
+
+      assertEquals("org.example.Person", arrayElement.getFullName());
+      assertEquals("org.example.Person", mapValue.getFullName());
+      assertEquals(2, optional.getTypes().size());
+      assertEquals(Schema.Type.NULL, optional.getTypes().get(0).getType());
+      assertEquals("org.example.Person", optional.getTypes().get(1).getFullName());
+      assertEquals("writer", result.getProp("source"));
+    }
+
+    @Test
+    public void shouldApplyAliasToDirectRecursiveRecord() {
+      Schema writer = directRecursiveRecord("OldNode", "org.example", null);
+      Schema reader = directRecursiveRecord("Node", "org.example", "OldNode");
+
+      Schema result = Schema.applyAliases(writer, reader);
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.RECORD, result.getType());
+      assertEquals("org.example.Node", result.getFullName());
+      Schema recursiveUnion = result.getField("next").schema();
+      assertEquals(Arrays.asList(Schema.Type.NULL, Schema.Type.RECORD),
+          Arrays.asList(recursiveUnion.getTypes().get(0).getType(), recursiveUnion.getTypes().get(1).getType()));
+      assertSame(result, recursiveUnion.getTypes().get(1));
+    }
+  }
+
+  public static class SchemaParserCoverageTests {
+
+    @Test
+    public void shouldParsePrimitiveSchema() {
+      Schema.Parser parser = new Schema.Parser();
+
+      Schema result = parser.parse("\"string\"");
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.STRING, result.getType());
+      assertEquals("string", result.getName());
+      assertEquals("string", result.getFullName());
+    }
+
+    @Test
+    public void shouldParseCompleteRecordSchema() {
+      String json = "{" + "\"type\":\"record\"," + "\"name\":\"Container\"," + "\"namespace\":\"org.example\","
+          + "\"doc\":\"Container record\"," + "\"aliases\":[\"OldContainer\"]," + "\"custom\":\"value\","
+          + "\"fields\":[" + "{" + "\"name\":\"id\"," + "\"type\":\"long\"," + "\"doc\":\"identifier\","
+          + "\"aliases\":[\"oldId\"]," + "\"fieldCustom\":\"fieldValue\"" + "}," + "{" + "\"name\":\"score\","
+          + "\"type\":\"double\"," + "\"default\":\"1.5\"," + "\"order\":\"descending\"" + "}," + "{"
+          + "\"name\":\"tags\"," + "\"type\":{" + "\"type\":\"array\"," + "\"items\":\"string\"" + "}" + "}," + "{"
+          + "\"name\":\"attributes\"," + "\"type\":{" + "\"type\":\"map\"," + "\"values\":\"int\"" + "}" + "}," + "{"
+          + "\"name\":\"optionalName\"," + "\"type\":[\"null\",\"string\"]," + "\"default\":null" + "}," + "{"
+          + "\"name\":\"status\"," + "\"type\":{" + "\"type\":\"enum\"," + "\"name\":\"Status\","
+          + "\"symbols\":[\"OPEN\",\"CLOSED\"]," + "\"default\":\"OPEN\"" + "}" + "}," + "{" + "\"name\":\"hash\","
+          + "\"type\":{" + "\"type\":\"fixed\"," + "\"name\":\"Hash\"," + "\"size\":16" + "}" + "}" + "]" + "}";
+
+      Schema.Parser parser = new Schema.Parser();
+
+      Schema result = parser.parse(json);
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.RECORD, result.getType());
+      assertEquals("Container", result.getName());
+      assertEquals("org.example", result.getNamespace());
+      assertEquals("org.example.Container", result.getFullName());
+      assertEquals("Container record", result.getDoc());
+      assertEquals("value", result.getProp("custom"));
+      assertTrue(result.getAliases().contains("org.example.OldContainer"));
+      assertEquals(7, result.getFields().size());
+
+      assertEquals(Arrays.asList("id", "score", "tags", "attributes", "optionalName", "status", "hash"),
+          Arrays.asList(result.getFields().get(0).name(), result.getFields().get(1).name(),
+              result.getFields().get(2).name(), result.getFields().get(3).name(), result.getFields().get(4).name(),
+              result.getFields().get(5).name(), result.getFields().get(6).name()));
+
+      Schema.Field id = result.getField("id");
+
+      assertNotNull(id);
+      assertEquals(Schema.Type.LONG, id.schema().getType());
+      assertEquals("identifier", id.doc());
+      assertTrue(id.aliases().contains("oldId"));
+      assertEquals("fieldValue", id.getProp("fieldCustom"));
+      assertEquals(0, id.pos());
+
+      Schema.Field score = result.getField("score");
+
+      assertNotNull(score);
+      assertEquals(Schema.Type.DOUBLE, score.schema().getType());
+      assertTrue(score.hasDefaultValue());
+      assertEquals(1.5, ((Number) score.defaultVal()).doubleValue(), 0.0);
+      assertEquals(Schema.Field.Order.DESCENDING, score.order());
+      assertEquals(1, score.pos());
+
+      Schema.Field tags = result.getField("tags");
+
+      assertNotNull(tags);
+      assertEquals(Schema.Type.ARRAY, tags.schema().getType());
+      assertEquals(Schema.Type.STRING, tags.schema().getElementType().getType());
+
+      Schema.Field attributes = result.getField("attributes");
+
+      assertNotNull(attributes);
+      assertEquals(Schema.Type.MAP, attributes.schema().getType());
+      assertEquals(Schema.Type.INT, attributes.schema().getValueType().getType());
+
+      Schema.Field optionalName = result.getField("optionalName");
+
+      assertNotNull(optionalName);
+      assertEquals(Schema.Type.UNION, optionalName.schema().getType());
+      assertEquals(2, optionalName.schema().getTypes().size());
+      assertEquals(Schema.Type.NULL, optionalName.schema().getTypes().get(0).getType());
+      assertEquals(Schema.Type.STRING, optionalName.schema().getTypes().get(1).getType());
+      assertTrue(optionalName.hasDefaultValue());
+      assertSame(JsonProperties.NULL_VALUE, optionalName.defaultVal());
+
+      Schema.Field status = result.getField("status");
+
+      assertNotNull(status);
+      assertEquals(Schema.Type.ENUM, status.schema().getType());
+      assertEquals("org.example.Status", status.schema().getFullName());
+      assertEquals(Arrays.asList("OPEN", "CLOSED"), status.schema().getEnumSymbols());
+      assertEquals("OPEN", status.schema().getEnumDefault());
+
+      Schema.Field hash = result.getField("hash");
+
+      assertNotNull(hash);
+      assertEquals(Schema.Type.FIXED, hash.schema().getType());
+      assertEquals("org.example.Hash", hash.schema().getFullName());
+      assertEquals(16, hash.schema().getFixedSize());
+    }
+
+    @Test
+    public void shouldParseSchemaFromStringFragments() {
+      Schema.Parser parser = new Schema.Parser();
+
+      Schema result = parser.parse("{\"type\":\"array\",", "\"items\":", "\"long\"}");
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.ARRAY, result.getType());
+      assertEquals(Schema.Type.LONG, result.getElementType().getType());
+    }
+
+    @Test
+    public void shouldResolveKnownTypeUsingSameParser() {
+      String personJson = "{" + "\"type\":\"record\"," + "\"name\":\"Person\"," + "\"namespace\":\"org.example\","
+          + "\"fields\":[" + "{" + "\"name\":\"name\"," + "\"type\":\"string\"" + "}" + "]" + "}";
+
+      Schema.Parser parser = new Schema.Parser();
+
+      Schema person = parser.parse(personJson);
+
+      assertTrue(parser.getTypes().containsKey("org.example.Person"));
+      assertSame(person, parser.getTypes().get("org.example.Person"));
+
+      Schema resolved = parser.parse("\"org.example.Person\"");
+
+      assertSame(person, resolved);
+    }
+
+    @Test
+    public void shouldAddAndResolvePredefinedType() {
+      Schema predefined = Schema.createRecord("Person", null, "org.example", false,
+          Collections.singletonList(new Schema.Field("name", primitive(Schema.Type.STRING))));
+
+      Schema.Parser parser = new Schema.Parser();
+
+      Schema.Parser returnedParser = parser.addTypes(Collections.singletonList(predefined));
+
+      assertSame(parser, returnedParser);
+      assertTrue(parser.getTypes().containsKey("org.example.Person"));
+      assertSame(predefined, parser.getTypes().get("org.example.Person"));
+
+      Schema resolved = parser.parse("\"org.example.Person\"");
+
+      assertEquals(predefined, resolved);
+      assertEquals("org.example.Person", resolved.getFullName());
+    }
+
+    @Test
+    public void shouldControlDefaultValidation() {
+      String json = "{" + "\"type\":\"record\"," + "\"name\":\"Measure\"," + "\"namespace\":\"org.example\","
+          + "\"fields\":[" + "{" + "\"name\":\"value\"," + "\"type\":\"int\"," + "\"default\":\"invalid\"" + "}" + "]"
+          + "}";
+
+      Schema.Parser validatingParser = new Schema.Parser();
+
+      assertSame(validatingParser, validatingParser.setValidateDefaults(true));
+      assertTrue(validatingParser.getValidateDefaults());
+
+      assertThrows(AvroTypeException.class, () -> validatingParser.parse(json));
+
+      Schema.Parser nonValidatingParser = new Schema.Parser();
+
+      assertSame(nonValidatingParser, nonValidatingParser.setValidateDefaults(false));
+      assertFalse(nonValidatingParser.getValidateDefaults());
+
+      Schema result = nonValidatingParser.parse(json);
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.RECORD, result.getType());
+
+      Schema.Field valueField = result.getField("value");
+
+      assertNotNull(valueField);
+      assertEquals(Schema.Type.INT, valueField.schema().getType());
+      assertTrue(valueField.hasDefaultValue());
+    }
+
+    @Test
+    public void shouldUseNoValidationWhenValidatorIsNull() {
+      String json = "{" + "\"type\":\"record\"," + "\"name\":\"1Record\"," + "\"fields\":[" + "{"
+          + "\"name\":\"1field\"," + "\"type\":\"string\"" + "}" + "]" + "}";
+
+      Schema.Parser parser = new Schema.Parser((NameValidator) null);
+
+      Schema result = parser.parse(json);
+
+      assertNotNull(result);
+      assertEquals(Schema.Type.RECORD, result.getType());
+      assertEquals("1Record", result.getName());
+      assertNotNull(result.getField("1field"));
+      assertEquals(Schema.Type.STRING, result.getField("1field").schema().getType());
+    }
+
+    @Test
+    public void shouldRejectDanglingAndMalformedContent() {
+      Schema.Parser danglingParser = new Schema.Parser();
+
+      assertThrows(SchemaParseException.class, () -> danglingParser.parse("\"string\" trailing"));
+
+      Schema.Parser malformedParser = new Schema.Parser();
+
+      assertThrows(SchemaParseException.class, () -> malformedParser.parse("{\"type\":\"record\","));
+    }
+
+    @Test
+    public void shouldRejectInvalidSchemaStructures() {
+      String[] invalidSchemas = { "{\"name\":\"MissingType\"}", "{\"type\":\"unknown\"}",
+          "{" + "\"type\":\"record\"," + "\"name\":\"Person\"" + "}",
+          "{" + "\"type\":\"record\"," + "\"name\":\"Person\"," + "\"fields\":[" + "{\"type\":\"string\"}" + "]" + "}",
+          "{" + "\"type\":\"record\"," + "\"name\":\"Person\"," + "\"fields\":[" + "{\"name\":\"value\"}" + "]" + "}",
+          "{\"type\":\"array\"}", "{\"type\":\"map\"}", "{" + "\"type\":\"enum\"," + "\"name\":\"Status\"" + "}",
+          "{" + "\"type\":\"fixed\"," + "\"name\":\"Hash\"" + "}" };
+
+      for (String invalidSchema : invalidSchemas) {
+        Schema.Parser parser = new Schema.Parser();
+
+        assertThrows("Schema non valido accettato: " + invalidSchema, SchemaParseException.class,
+            () -> parser.parse(invalidSchema));
+      }
+    }
+
+    @Test
+    public void shouldRejectInvalidAliases() {
+      String aliasesNotArray = "{" + "\"type\":\"record\"," + "\"name\":\"Person\"," + "\"aliases\":\"OldPerson\","
+          + "\"fields\":[]" + "}";
+
+      String nonTextualAlias = "{" + "\"type\":\"record\"," + "\"name\":\"Person\"," + "\"aliases\":[10],"
+          + "\"fields\":[]" + "}";
+
+      Schema.Parser firstParser = new Schema.Parser();
+
+      assertThrows(SchemaParseException.class, () -> firstParser.parse(aliasesNotArray));
+
+      Schema.Parser secondParser = new Schema.Parser();
+
+      assertThrows(SchemaParseException.class, () -> secondParser.parse(nonTextualAlias));
+    }
+  }
+}
+
+================================================================================
+END FILE: ISW2SchemaCFTest.java
+================================================================================
+
+================================================================================
+BEGIN FILE: ISW2SchemaMTTest.java
+================================================================================
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information.
+ */
+package org.apache.avro;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
+import java.util.Arrays;
+import java.util.Collections;
+
+import org.junit.Test;
+
+/**
+ * Mutation-testing refinements for Schema.
+ *
+ * <p>
+ * Each test strengthens an oracle associated with one or more mutants that
+ * survived the BB and CF suites.
+ * </p>
+ */
+public class ISW2SchemaMTTest {
+
+  private static Schema primitive(Schema.Type type) {
+    return Schema.create(type);
+  }
+
+  private static Schema emptyRecord(String name, String namespace) {
+    return Schema.createRecord(name, null, namespace, false, Collections.emptyList());
+  }
+
+  @Test
+  public void shouldPreserveFieldPropertiesWhenApplyingAliases() {
+    Schema.Field writerField = new Schema.Field("oldName", primitive(Schema.Type.STRING));
+    writerField.addProp("fieldProp", "writer-value");
+    Schema writer = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(writerField));
+
+    Schema.Field readerField = new Schema.Field("name", primitive(Schema.Type.STRING));
+    readerField.addAlias("oldName");
+    Schema reader = Schema.createRecord("Person", null, "org.example", false, Collections.singletonList(readerField));
+
+    Schema result = Schema.applyAliases(writer, reader);
+    Schema.Field renamedField = result.getField("name");
+
+    assertNotNull(renamedField);
+    assertEquals("writer-value", renamedField.getProp("fieldProp"));
+  }
+
+  @Test
+  public void shouldPreservePropertiesAndLogicalTypesOfParsedSchemas() {
+    String json = "{" + "\"type\":\"record\"," + "\"name\":\"Container\"," + "\"namespace\":\"org.example\","
+        + "\"fields\":[" + "{\"name\":\"items\",\"type\":{"
+        + "\"type\":\"array\",\"items\":\"string\",\"arrayProp\":\"array-value\"}},"
+        + "{\"name\":\"attributes\",\"type\":{" + "\"type\":\"map\",\"values\":\"long\",\"mapProp\":\"map-value\"}},"
+        + "{\"name\":\"status\",\"type\":{" + "\"type\":\"enum\",\"name\":\"Status\","
+        + "\"symbols\":[\"OPEN\",\"CLOSED\"],\"enumProp\":\"enum-value\"}}," + "{\"name\":\"hash\",\"type\":{"
+        + "\"type\":\"fixed\",\"name\":\"Hash\",\"size\":8," + "\"fixedProp\":\"fixed-value\"}},"
+        + "{\"name\":\"createdOn\",\"type\":{" + "\"type\":\"int\",\"logicalType\":\"date\"}}" + "]}";
+
+    Schema result = new Schema.Parser().parse(json);
+
+    Schema arraySchema = result.getField("items").schema();
+    Schema mapSchema = result.getField("attributes").schema();
+    Schema enumSchema = result.getField("status").schema();
+    Schema fixedSchema = result.getField("hash").schema();
+    Schema dateSchema = result.getField("createdOn").schema();
+
+    assertEquals("array-value", arraySchema.getProp("arrayProp"));
+    assertEquals("map-value", mapSchema.getProp("mapProp"));
+    assertEquals("enum-value", enumSchema.getProp("enumProp"));
+    assertEquals("fixed-value", fixedSchema.getProp("fixedProp"));
+    assertNotNull(dateSchema.getLogicalType());
+    assertEquals("date", dateSchema.getLogicalType().getName());
+  }
+
+  @Test
+  public void shouldParseAliasesAndRegisterEnumAndFixedTypes() {
+    Schema.Parser parser = new Schema.Parser();
+
+    String enumJson = "{" + "\"type\":\"enum\"," + "\"name\":\"Status\"," + "\"namespace\":\"org.example\","
+        + "\"aliases\":[\"OldStatus\"]," + "\"symbols\":[\"OPEN\",\"CLOSED\"]" + "}";
+
+    Schema enumSchema = parser.parse(enumJson);
+
+    assertTrue(enumSchema.getAliases().contains("org.example.OldStatus"));
+    assertEquals(enumSchema, parser.parse("\"org.example.Status\""));
+
+    String fixedJson = "{" + "\"type\":\"fixed\"," + "\"name\":\"Hash\"," + "\"namespace\":\"org.example\","
+        + "\"aliases\":[\"OldHash\"]," + "\"size\":16" + "}";
+
+    Schema fixedSchema = parser.parse(fixedJson);
+
+    assertTrue(fixedSchema.getAliases().contains("org.example.OldHash"));
+    assertEquals(fixedSchema, parser.parse("\"org.example.Hash\""));
+  }
+
+  @Test
+  public void shouldDiscoverAliasesInsideRootContainers() {
+    Schema arrayWriterRecord = emptyRecord("OldArrayPerson", "org.example");
+    Schema arrayReaderRecord = emptyRecord("ArrayPerson", "org.example");
+    arrayReaderRecord.addAlias("OldArrayPerson");
+
+    Schema arrayResult = Schema.applyAliases(Schema.createArray(arrayWriterRecord),
+        Schema.createArray(arrayReaderRecord));
+
+    assertEquals("org.example.ArrayPerson", arrayResult.getElementType().getFullName());
+
+    Schema mapWriterRecord = emptyRecord("OldMapPerson", "org.example");
+    Schema mapReaderRecord = emptyRecord("MapPerson", "org.example");
+    mapReaderRecord.addAlias("OldMapPerson");
+
+    Schema mapResult = Schema.applyAliases(Schema.createMap(mapWriterRecord), Schema.createMap(mapReaderRecord));
+
+    assertEquals("org.example.MapPerson", mapResult.getValueType().getFullName());
+
+    Schema unionWriterRecord = emptyRecord("OldUnionPerson", "org.example");
+    Schema unionReaderRecord = emptyRecord("UnionPerson", "org.example");
+    unionReaderRecord.addAlias("OldUnionPerson");
+
+    Schema unionWriter = Schema.createUnion(primitive(Schema.Type.NULL), unionWriterRecord);
+    Schema unionReader = Schema.createUnion(primitive(Schema.Type.NULL), unionReaderRecord);
+
+    Schema unionResult = Schema.applyAliases(unionWriter, unionReader);
+
+    assertEquals(Arrays.asList(Schema.Type.NULL, Schema.Type.RECORD),
+        Arrays.asList(unionResult.getTypes().get(0).getType(), unionResult.getTypes().get(1).getType()));
+    assertEquals("org.example.UnionPerson", unionResult.getTypes().get(1).getFullName());
+  }
+
+  @Test
+  public void shouldCharacterizeNullableSchemas() {
+    Schema nullSchema = primitive(Schema.Type.NULL);
+    Schema stringSchema = primitive(Schema.Type.STRING);
+    Schema nullableLater = Schema.createUnion(primitive(Schema.Type.STRING), primitive(Schema.Type.NULL));
+    Schema nonNullableUnion = Schema.createUnion(primitive(Schema.Type.STRING), primitive(Schema.Type.INT));
+
+    assertTrue(nullSchema.isNullable());
+    assertFalse(stringSchema.isNullable());
+    assertTrue(nullableLater.isNullable());
+    assertFalse(nonNullableUnion.isNullable());
+  }
+
+  @SuppressWarnings("deprecation")
+  @Test
+  public void shouldSetReadAndRestoreGlobalNameValidator() {
+    NameValidator previous = Schema.getNameValidator();
+
+    try {
+      Schema.setNameValidator(NameValidator.NO_VALIDATION);
+
+      assertSame(NameValidator.NO_VALIDATION, Schema.getNameValidator());
+    } finally {
+      Schema.setNameValidator(previous);
+    }
+  }
+}
+
+
+================================================================================
+END FILE: ISW2SchemaMTTest.java
+================================================================================
