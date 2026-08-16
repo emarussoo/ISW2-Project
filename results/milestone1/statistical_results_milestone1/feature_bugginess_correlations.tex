@@ -1,0 +1,32 @@
+% Requires: \usepackage{booktabs}
+\begin{table}[htbp]
+\centering
+\small
+\caption{Associazioni non trascurabili tra le feature della Milestone~1 e la bugginess, misurate mediante il coefficiente di Spearman. I p-value sono corretti con la procedura di Benjamini--Hochberg.}
+\label{tab:feature-bugginess-correlation}
+\begin{tabular}{lrrll}
+\toprule
+\textbf{Feature} & \textbf{$\rho$} & \textbf{$p_{\mathrm{adj}}$} & \textbf{Direzione} & \textbf{Intensità} \\
+\midrule
+NR & 0{,}254 & $<0{,}001$ & Positiva & Debole \\
+NFix & 0{,}245 & $<0{,}001$ & Positiva & Debole \\
+Weighted\_Age & 0{,}225 & $<0{,}001$ & Positiva & Debole \\
+Average\_Change\_Set\_Size & -0{,}218 & $<0{,}001$ & Negativa & Debole \\
+Change\_Set\_Size & 0{,}204 & $<0{,}001$ & Positiva & Debole \\
+LOC\_Added & 0{,}203 & $<0{,}001$ & Positiva & Debole \\
+Churn & 0{,}201 & $<0{,}001$ & Positiva & Debole \\
+NSmells & 0{,}196 & $<0{,}001$ & Positiva & Debole \\
+Age\_in\_Days & 0{,}195 & $<0{,}001$ & Positiva & Debole \\
+Average\_Entropy & -0{,}189 & $<0{,}001$ & Negativa & Debole \\
+Size\_LOC & 0{,}188 & $<0{,}001$ & Positiva & Debole \\
+LOC\_Deleted & 0{,}179 & $<0{,}001$ & Positiva & Debole \\
+Max\_LOC\_Deleted & 0{,}174 & $<0{,}001$ & Positiva & Debole \\
+Average\_ND & -0{,}170 & $<0{,}001$ & Negativa & Debole \\
+Max\_Churn & 0{,}160 & $<0{,}001$ & Positiva & Debole \\
+Max\_LOC\_Added & 0{,}153 & $<0{,}001$ & Positiva & Debole \\
+Average\_LOC\_Deleted & 0{,}139 & $<0{,}001$ & Positiva & Debole \\
+\bottomrule
+\end{tabular}
+\vspace{1mm}
+\parbox{0.95\textwidth}{\footnotesize Sono riportate soltanto le associazioni con $|\rho|\geq 0{,}10$ e $p_{\mathrm{adj}}<0{,}05$. Le soglie di intensità sono utilizzate esclusivamente a fini descrittivi.}
+\end{table}

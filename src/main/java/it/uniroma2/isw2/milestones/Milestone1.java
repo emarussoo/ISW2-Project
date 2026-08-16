@@ -5,9 +5,9 @@ import it.uniroma2.isw2.dataset.jira.JiraFetcher;
 import it.uniroma2.isw2.model.ClassMetricsRow;
 import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.Ticket;
-import it.uniroma2.isw2.dataset.szz.BugLabeler;
-import it.uniroma2.isw2.dataset.szz.GitBugMapper;
-import it.uniroma2.isw2.dataset.szz.VersionLifecycleCalculator;
+import it.uniroma2.isw2.dataset.labeling.BugLabeler;
+import it.uniroma2.isw2.dataset.labeling.GitBugMapper;
+import it.uniroma2.isw2.dataset.labeling.VersionLifecycleCalculator;
 import it.uniroma2.isw2.utils.CsvExporter;
 
 import java.util.List;

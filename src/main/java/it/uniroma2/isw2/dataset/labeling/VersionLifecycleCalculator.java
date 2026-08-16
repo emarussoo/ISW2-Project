@@ -1,4 +1,4 @@
-package it.uniroma2.isw2.dataset.szz;
+package it.uniroma2.isw2.dataset.labeling;
 
 import it.uniroma2.isw2.model.Release;
 import it.uniroma2.isw2.model.Ticket;
